@@ -1,0 +1,29 @@
+# Zeabur 部署配置文件
+# 文档: https://docs.zeabur.com/deploy/config-file
+
+# 服务名称
+name: thinkflowmap
+
+# 构建配置
+build:
+  # 使用 Dockerfile 构建
+  dockerfile: ./Dockerfile
+
+# 部署配置
+deploy:
+  # 健康检查路径
+  health_check:
+    path: /api/health
+    port: 8080
+  
+  # 环境变量
+  env:
+    - key: PORT
+      value: "8080"
+    - key: PYTHONPATH
+      value: "/app"
+  
+  # 资源限制（根据需要调整）
+  resources:
+    memory: 512Mi
+    cpu: 500m
