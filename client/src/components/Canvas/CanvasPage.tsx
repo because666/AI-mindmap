@@ -8,7 +8,7 @@ import {
   useNodesState, 
   useEdgesState
 } from '@xyflow/react';
-import type { Connection, Node, Edge } from '@xyflow/react';
+import type { Connection, Node, Edge, NodeProps } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Plus, MessageSquare, Edit3, Link2, Layers, Trash2, Undo2, Redo2, GitBranch, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
 import { useAppStore, RELATION_TYPE_LABELS } from '../../stores/appStore';
@@ -17,71 +17,74 @@ import RelationEditor from '../Node/RelationEditor';
 import CompositeNodeCreator from '../Node/CompositeNodeCreator';
 import TestEdges from './TestEdges';
 
+interface CustomNodeData extends Record<string, unknown> {
+  label: string; 
+  summary?: string;
+  isRoot?: boolean;
+  isComposite?: boolean;
+  isExpanded?: boolean;
+  childCount?: number;
+  conversationId?: string | null;
+  messageCount?: number;
+  onExpand?: () => void;
+}
+
+type CustomNodeType = Node<CustomNodeData>;
+
 /**
  * 自定义节点组件
  */
-const CustomNode: React.FC<{ 
-  data: { 
-    label: string; 
-    summary?: string;
-    isRoot?: boolean;
-    isComposite?: boolean;
-    isExpanded?: boolean;
-    childCount?: number;
-    conversationId?: string | null;
-    messageCount?: number;
-    onExpand?: () => void;
-  }; 
-  selected?: boolean;
-}> = ({ data, selected }) => {
+const CustomNode: React.FC<NodeProps<CustomNodeType>> = ({ data, selected }) => {
+  const nodeData = data as CustomNodeData;
+  
   return (
     <div
       className={`px-4 py-3 rounded-xl shadow-lg border-2 min-w-[160px] max-w-[280px] cursor-pointer transition-all ${
         selected
           ? 'bg-primary-600 border-primary-400 shadow-primary-500/20'
-          : data.isComposite && data.isExpanded
+          : nodeData.isComposite && nodeData.isExpanded
             ? 'bg-primary-700/80 border-primary-400 shadow-primary-500/30'
-            : data.isRoot 
+            : nodeData.isRoot 
               ? 'bg-dark-700 border-primary-500/50 hover:border-primary-400'
               : 'bg-dark-700 border-dark-600 hover:border-primary-500'
       }`}
     >
       <div className="flex items-center gap-2 mb-1">
-        {data.isComposite ? (
-          <Layers className={`w-4 h-4 ${data.isExpanded ? 'text-primary-300' : 'text-primary-400'}`} />
-        ) : data.isRoot ? (
+        {nodeData.isComposite ? (
+          <Layers className={`w-4 h-4 ${nodeData.isExpanded ? 'text-primary-300' : 'text-primary-400'}`} />
+        ) : nodeData.isRoot ? (
           <GitBranch className="w-4 h-4 text-primary-400" />
         ) : (
           <MessageSquare className="w-4 h-4 text-primary-400" />
         )}
-        <span className="text-white font-medium truncate flex-1">{data.label}</span>
-        {data.messageCount !== undefined && data.messageCount > 0 && (
+        <span className="text-white font-medium truncate flex-1">{nodeData.label}</span>
+        {nodeData.messageCount !== undefined && nodeData.messageCount > 0 && (
           <span className="text-xs bg-primary-600 text-white px-1.5 py-0.5 rounded-full">
-            {data.messageCount}
+            {nodeData.messageCount}
           </span>
         )}
       </div>
-      {data.summary && (
-        <p className="text-xs text-dark-300 truncate">{data.summary}</p>
+      {nodeData.summary && (
+        <p className="text-xs text-dark-300 truncate">{nodeData.summary}</p>
       )}
-      {data.isComposite && (
+      {nodeData.isComposite && (
         <div className="flex items-center justify-between mt-2">
-          <p className={`text-xs ${data.isExpanded ? 'text-primary-300' : 'text-primary-400'}`}>
-            {data.isExpanded ? '已展开' : `包含 ${data.childCount} 个节点`}
+          <p className={`text-xs ${nodeData.isExpanded ? 'text-primary-300' : 'text-primary-400'}`}>
+            {nodeData.isExpanded ? '已展开' : `包含 ${nodeData.childCount} 个节点`}
           </p>
           <button
             onClick={(e) => {
               e.stopPropagation();
-              data.onExpand?.();
+              nodeData.onExpand?.();
             }}
             className={`p-1 rounded transition-colors ${
-              data.isExpanded 
+              nodeData.isExpanded 
                 ? 'text-primary-300 hover:text-primary-200 hover:bg-primary-500/20' 
                 : 'text-primary-400 hover:text-primary-300 hover:bg-primary-600/20'
             }`}
-            title={data.isExpanded ? '折叠节点' : '展开节点'}
+            title={nodeData.isExpanded ? '折叠节点' : '展开节点'}
           >
-            {data.isExpanded ? (
+            {nodeData.isExpanded ? (
               <Minimize2 className="w-3.5 h-3.5" />
             ) : (
               <Maximize2 className="w-3.5 h-3.5" />
@@ -89,7 +92,7 @@ const CustomNode: React.FC<{
           </button>
         </div>
       )}
-      {data.isRoot && (
+      {nodeData.isRoot && (
         <p className="text-xs text-primary-400/70 mt-1">根节点</p>
       )}
     </div>
