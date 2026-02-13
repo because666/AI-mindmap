@@ -747,76 +747,63 @@ async def get_ai_status():
 
 
 # ============== 静态文件服务 ==============
-# SPA (Single Page Application) 静态文件服务
-# 支持 HTML5 History 模式路由
-
-from starlette.requests import Request
-from starlette.responses import Response
+# 简化的静态文件服务，支持 SPA 路由
 
 
-class SPAStaticFiles:
+def serve_spa(request_path: str) -> str:
     """
-    SPA静态文件处理器
+    获取SPA请求对应的文件路径
     
-    支持HTML5 History模式：
-    - 静态资源文件直接返回
-    - 其他路径返回index.html（前端路由处理）
+    Args:
+        request_path: 请求路径
+        
+    Returns:
+        文件路径或None
     """
+    # 静态资源文件（有扩展名）
+    filename = request_path.lstrip("/")
+    if filename and "." in filename.split("/")[-1]:
+        file_path = os.path.join(static_dir, filename)
+        if os.path.isfile(file_path):
+            return file_path
     
-    def __init__(self, directory: str):
-        self.directory = directory
-        self.static_files = StaticFiles(directory=directory, html=False)
+    # 其他路径返回 index.html（SPA 路由）
+    index_path = os.path.join(static_dir, "index.html")
+    if os.path.isfile(index_path):
+        return index_path
     
-    async def __call__(self, scope, receive, send) -> None:
-        """
-        处理请求
-        
-        Args:
-            scope: ASGI scope
-            receive: ASGI receive
-            send: ASGI send
-        """
-        request = Request(scope, receive)
-        path = request.url.path
-        
-        # 静态资源文件（有扩展名）直接返回
-        if "." in path.split("/")[-1]:
-            try:
-                await self.static_files(scope, receive, send)
-                return
-            except Exception:
-                pass
-        
-        # 其他路径返回 index.html（SPA 路由）
-        index_path = os.path.join(self.directory, "index.html")
-        if os.path.exists(index_path):
-            response = FileResponse(index_path, media_type="text/html")
-            await response(scope, receive, send)
-        else:
-            # 如果没有前端文件，返回API信息
-            response = Response(
-                content=json.dumps({
-                    "name": "思流图（ThinkFlowMap）API",
-                    "version": "1.0.0",
-                    "status": "running",
-                    "ai_service_ready": app_state.ai_service is not None
-                }),
-                media_type="application/json"
-            )
-            await response(scope, receive, send)
+    return None
 
 
-# 挂载静态文件（前端构建产物）
-# 使用 SPA 模式支持前端路由
-# 始终尝试挂载，即使目录暂时不存在（Docker构建时可能尚未创建）
-try:
-    if os.path.exists(static_dir):
-        app.mount("/", SPAStaticFiles(directory=static_dir), name="static")
-        print(f"静态文件服务已挂载: {static_dir}")
-    else:
-        print(f"警告: 静态文件目录不存在: {static_dir}")
-except Exception as e:
-    print(f"静态文件挂载失败: {e}")
+@app.get("/{full_path:path}")
+async def serve_frontend(full_path: str):
+    """
+    处理前端路由请求
+    
+    Args:
+        full_path: 请求路径
+        
+    Returns:
+        静态文件或index.html
+    """
+    # 如果静态目录不存在，返回API信息
+    if not os.path.exists(static_dir):
+        return {
+            "name": "思流图（ThinkFlowMap）API",
+            "version": "1.0.0",
+            "status": "running",
+            "ai_service_ready": app_state.ai_service is not None,
+            "hint": "前端静态文件未部署，请检查构建配置"
+        }
+    
+    # 获取文件路径
+    file_path = serve_spa(f"/{full_path}")
+    
+    if file_path:
+        return FileResponse(file_path)
+    
+    # 文件不存在，返回404
+    return {"error": "Not found", "path": full_path}
 
 
 # ============== 主入口 ==============

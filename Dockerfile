@@ -46,5 +46,5 @@ ENV PORT=8080
 # 暴露端口（Zeabur使用8080）
 EXPOSE 8080
 
-# 启动命令 - 使用uvicorn启动，确保正确处理静态文件
-CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# 启动命令 - 直接运行main.py
+CMD ["python", "backend/main.py"]
