@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
+import path from 'path';
 import { config } from './config';
 import { 
   rateLimiter, 
@@ -20,7 +21,9 @@ import aiRouter from './routes/ai';
 
 const app = express();
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,
+}));
 app.use(cors({
   origin: [
     'http://localhost:5173', 
@@ -69,10 +72,20 @@ app.use('/api/ai', aiRouter);
 
 app.use(errorHandler);
 
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Not found',
+const clientDistPath = path.join(__dirname, '../../client/dist');
+app.use(express.static(clientDistPath));
+
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({
+      success: false,
+      error: 'Not found',
+    });
+  }
+  res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
+    if (err) {
+      next(err);
+    }
   });
 });
 

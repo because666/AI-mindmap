@@ -4,21 +4,6 @@
   "description": "思流图 - 对话驱动的结构化思维导图系统",
   "services": [
     {
-      "name": "client",
-      "type": "static",
-      "source": {
-        "type": "node",
-        "path": "client"
-      },
-      "build": {
-        "command": "npm install && npm run build",
-        "output": "dist"
-      },
-      "env": {
-        "VITE_API_URL": "${SERVER_URL}"
-      }
-    },
-    {
       "name": "server",
       "type": "web",
       "source": {
@@ -26,7 +11,7 @@
         "path": "server"
       },
       "build": {
-        "command": "npm install && npm run build"
+        "command": "npm install && npm run build && cd ../client && npm install && npm run build"
       },
       "start": {
         "command": "npm start"

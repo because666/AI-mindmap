@@ -3,6 +3,23 @@ import { config } from '../config';
 import { AIRequest, AIResponse, EmbeddingRequest, EmbeddingResponse } from '../types';
 import { vectorDBService } from '../data/vector/connection';
 
+interface ChatOptions {
+  messages: Array<{ role: string; content: string }>;
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  provider?: string;
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+interface TestOptions {
+  provider?: string;
+  model?: string;
+  apiKey: string;
+  baseUrl?: string;
+}
+
 class AIService {
   private openai: OpenAI | null = null;
   private static instance: AIService;
@@ -20,17 +37,24 @@ class AIService {
     return AIService.instance;
   }
 
-  async chat(request: AIRequest): Promise<AIResponse> {
-    if (!this.openai) {
-      return {
-        success: false,
-        error: 'OpenAI API key not configured',
-      };
+  private getOpenAIClient(apiKey?: string, baseUrl?: string): OpenAI {
+    if (apiKey) {
+      return new OpenAI({ 
+        apiKey, 
+        baseURL: baseUrl || 'https://api.openai.com/v1'
+      });
     }
+    if (!this.openai) {
+      throw new Error('OpenAI API key not configured');
+    }
+    return this.openai;
+  }
 
+  async chat(request: ChatOptions): Promise<AIResponse> {
     try {
+      const client = this.getOpenAIClient(request.apiKey, request.baseUrl);
       const model = request.model || config.ai.defaultModel;
-      const response = await this.openai.chat.completions.create({
+      const response = await client.chat.completions.create({
         model,
         messages: request.messages.map(m => ({
           role: m.role as 'system' | 'user' | 'assistant',
@@ -55,6 +79,34 @@ class AIService {
       return {
         success: false,
         error: error.message || 'Unknown error',
+      };
+    }
+  }
+
+  async testConnection(options: TestOptions): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+      if (!options.apiKey) {
+        return { success: false, error: 'API Key is required' };
+      }
+      
+      const client = this.getOpenAIClient(options.apiKey, options.baseUrl);
+      const model = options.model || 'gpt-3.5-turbo';
+      
+      const response = await client.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: 'Hi' }],
+        max_tokens: 5,
+      });
+
+      if (response.choices && response.choices.length > 0) {
+        return { success: true, message: 'API connection successful' };
+      }
+      
+      return { success: false, error: 'Unexpected response from API' };
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: error.message || 'Connection failed' 
       };
     }
   }
