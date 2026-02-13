@@ -1,0 +1,30 @@
+{
+  "name": "ai-mindmap",
+  "version": "2.0.0",
+  "description": "思流图 - 对话驱动的结构化思维导图系统",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev:client": "npm run dev --workspace=client",
+    "dev:server": "npm run dev --workspace=server",
+    "build:client": "npm run build --workspace=client",
+    "build:server": "npm run build --workspace=server",
+    "build": "npm run build:server && npm run build:client",
+    "start": "npm run start --workspace=server"
+  },
+  "keywords": [
+    "mindmap",
+    "ai",
+    "knowledge-graph",
+    "conversation",
+    "thinking"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

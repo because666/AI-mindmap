@@ -1,0 +1,273 @@
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { Send, Loader2, Trash2, User, Bot, Sparkles, Settings, GitBranch, MessageSquare } from 'lucide-react';
+import { useAppStore, type NodeData } from '../../stores/appStore';
+import { useAPIConfigStore } from '../../stores/apiConfigStore';
+import { chatService } from '../../services/chatService';
+
+interface ChatPanelProps {
+  nodeId?: string | null;
+}
+
+/**
+ * 聊天面板组件 - 支持分支隔离上下文
+ */
+const ChatPanel: React.FC<ChatPanelProps> = ({ nodeId }) => {
+  const { nodes, conversations, addConversation, addMessage, clearConversation, getConversationContext } = useAppStore();
+  const { config } = useAPIConfigStore();
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 获取当前节点的对话
+  const node = nodeId ? nodes.get(nodeId) : null;
+  const conversation = node?.conversationId ? conversations.get(node.conversationId) : null;
+  const messages = conversation?.messages || [];
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  /**
+   * 获取上下文信息
+   */
+  const contextInfo = useMemo(() => {
+    if (!nodeId || !node) return { parentCount: 0, relationCount: 0 };
+    
+    const parentCount = node.parentIds.length;
+    const context = getConversationContext(nodeId);
+    const nodeIds = new Set<string>();
+    context.forEach(msg => {
+      const match = msg.content.match(/\[节点: (.+)\]/);
+      if (match) nodeIds.add(match[1]);
+    });
+    
+    return {
+      parentCount,
+      relationCount: Math.max(0, nodeIds.size - 1)
+    };
+  }, [nodeId, node, getConversationContext]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  /**
+   * 发送消息
+   */
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
+    if (!config.apiKey) {
+      setError('请先在设置中配置API密钥');
+      return;
+    }
+
+    if (!nodeId) {
+      setError('请先选择一个节点');
+      return;
+    }
+
+    const userMessage = input.trim();
+    setInput('');
+    setError(null);
+
+    // 确保节点有对话
+    let convId = node?.conversationId;
+    if (!convId) {
+      convId = addConversation(nodeId);
+    }
+
+    setIsLoading(true);
+
+    // 添加用户消息
+    addMessage(convId, { role: 'user', content: userMessage });
+
+    // 获取完整的上下文消息
+    const contextMessages = getConversationContext(nodeId);
+    
+    // 构建完整消息列表（上下文 + 当前消息）
+    const allMessages = [
+      ...contextMessages,
+      { role: 'user' as const, content: userMessage }
+    ];
+
+    const result = await chatService.sendMessage(allMessages, config);
+
+    if (result.success && result.content) {
+      addMessage(convId, { role: 'assistant', content: result.content });
+    } else {
+      setError(result.error || '发送消息失败');
+    }
+
+    setIsLoading(false);
+  };
+
+  /**
+   * 处理键盘事件
+   */
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  /**
+   * 清空对话
+   */
+  const handleClear = () => {
+    if (conversation?.id && confirm('确定要清空此对话吗？')) {
+      clearConversation(conversation.id);
+    }
+  };
+
+  if (!nodeId) {
+    return (
+      <div className="h-full flex flex-col bg-dark-900">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center text-dark-400 px-6">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-dark-700 flex items-center justify-center">
+              <MessageSquare className="w-8 h-8 text-dark-500" />
+            </div>
+            <p className="text-lg font-medium text-white mb-2">选择节点开始对话</p>
+            <p className="text-sm">点击画布上的节点，或创建新节点</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col bg-dark-900">
+      {/* 节点信息头部 */}
+      <div className="px-4 py-3 border-b border-dark-700 bg-dark-800">
+        <div className="flex items-center gap-2">
+          {node?.isRoot ? (
+            <GitBranch className="w-4 h-4 text-primary-400" />
+          ) : (
+            <MessageSquare className="w-4 h-4 text-primary-400" />
+          )}
+          <span className="text-white font-medium truncate flex-1">{node?.title}</span>
+          <button
+            onClick={handleClear}
+            className="p-1.5 text-dark-400 hover:text-red-400 hover:bg-dark-700 rounded-lg transition-colors"
+            title="清空对话"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+        {(contextInfo.parentCount > 0 || contextInfo.relationCount > 0) && (
+          <div className="mt-2 flex items-center gap-2 text-xs text-dark-400">
+            {contextInfo.parentCount > 0 && (
+              <span className="flex items-center gap-1 px-2 py-0.5 bg-dark-700 rounded-full">
+                <GitBranch className="w-3 h-3" />
+                继承 {contextInfo.parentCount} 个父节点
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 消息列表 */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.length === 0 ? (
+          <div className="text-center text-dark-400 py-8">
+            <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p className="text-lg font-medium text-white mb-1">开始与AI对话</p>
+            <p className="text-sm">
+              {node?.isRoot 
+                ? '这是一个根节点，对话将从这里开始'
+                : '对话将自动继承父节点的上下文'
+              }
+            </p>
+            {contextInfo.parentCount > 0 && (
+              <p className="text-xs text-primary-400 mt-2">
+                已继承 {contextInfo.parentCount} 个父节点的对话历史
+              </p>
+            )}
+          </div>
+        ) : (
+          messages.map((message) => (
+            <div
+              key={message._id}
+              className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+            >
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  message.role === 'user' ? 'bg-primary-600' : 'bg-dark-700'
+                }`}
+              >
+                {message.role === 'user' ? (
+                  <User className="w-4 h-4 text-white" />
+                ) : (
+                  <Bot className="w-4 h-4 text-primary-400" />
+                )}
+              </div>
+              <div
+                className={`max-w-[85%] px-4 py-2.5 rounded-2xl ${
+                  message.role === 'user'
+                    ? 'bg-primary-600 text-white rounded-tr-sm'
+                    : 'bg-dark-700 text-white rounded-tl-sm'
+                }`}
+              >
+                <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.content}</p>
+              </div>
+            </div>
+          ))
+        )}
+        
+        {isLoading && (
+          <div className="flex gap-3">
+            <div className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center">
+              <Loader2 className="w-4 h-4 text-primary-400 animate-spin" />
+            </div>
+            <div className="px-4 py-2.5 rounded-2xl bg-dark-700 text-dark-300 rounded-tl-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">正在思考</span>
+                <span className="flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-primary-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                  <span className="w-1.5 h-1.5 bg-primary-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                  <span className="w-1.5 h-1.5 bg-primary-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {error && (
+          <div className="text-center text-red-400 text-sm py-2 px-4 bg-red-900/20 rounded-lg">
+            {error}
+          </div>
+        )}
+        
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* 输入区域 */}
+      <div className="p-4 border-t border-dark-700">
+        <div className="flex gap-2">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="输入消息... (Enter发送，Shift+Enter换行)"
+            rows={1}
+            className="flex-1 px-4 py-2.5 bg-dark-700 border border-dark-600 rounded-xl text-white placeholder-dark-400 focus:border-primary-500 focus:outline-none resize-none transition-colors text-sm"
+          />
+          <button
+            onClick={handleSend}
+            disabled={isLoading || !input.trim()}
+            className="px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-xs text-dark-500 mt-2 text-center">
+          对话上下文将自动包含父节点历史
+        </p>
+      </div>
+    </div>
+  );
+};
+
+export default ChatPanel;
