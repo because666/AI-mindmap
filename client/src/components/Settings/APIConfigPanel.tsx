@@ -62,7 +62,20 @@ const APIConfigPanel: React.FC = () => {
         }),
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      let result;
+      
+      if (!response.ok) {
+        result = { success: false, error: `HTTP ${response.status}: ${text || 'Request failed'}` };
+      } else if (!text) {
+        result = { success: false, error: 'Empty response from server' };
+      } else {
+        try {
+          result = JSON.parse(text);
+        } catch {
+          result = { success: false, error: 'Invalid JSON response from server' };
+        }
+      }
       
       if (result.success) {
         setTestResult({ success: true, message: 'API连接测试成功！' });

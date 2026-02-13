@@ -12,6 +12,33 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
+async function parseJsonResponse(response: Response): Promise<any> {
+  const contentType = response.headers.get('content-type');
+  const text = await response.text();
+  
+  if (!response.ok) {
+    if (contentType?.includes('application/json') && text) {
+      try {
+        const errorData = JSON.parse(text);
+        return { success: false, error: errorData.error || `HTTP ${response.status}` };
+      } catch {
+        return { success: false, error: `HTTP ${response.status}: ${text || 'Request failed'}` };
+      }
+    }
+    return { success: false, error: `HTTP ${response.status}: ${text || 'Request failed'}` };
+  }
+  
+  if (!text) {
+    return { success: false, error: 'Empty response from server' };
+  }
+  
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { success: false, error: 'Invalid JSON response from server' };
+  }
+}
+
 /**
  * AI聊天服务
  */
@@ -40,7 +67,7 @@ export const chatService = {
         }),
       });
 
-      const result = await response.json();
+      const result = await parseJsonResponse(response);
       
       return {
         success: result.success,
@@ -73,7 +100,7 @@ export const chatService = {
         }),
       });
 
-      const result = await response.json();
+      const result = await parseJsonResponse(response);
       
       return {
         success: result.success,
