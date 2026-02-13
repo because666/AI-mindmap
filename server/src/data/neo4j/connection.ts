@@ -17,34 +17,34 @@ class Neo4jService {
   async connect(): Promise<void> {
     if (this.driver) return;
     
-    console.log(`🔌 Connecting to Neo4j at ${config.neo4j.uri}...`);
+    const uri = config.neo4j.uri;
+    const user = config.neo4j.user;
+    const password = config.neo4j.password;
     
-    this.driver = neo4j.driver(
-      config.neo4j.uri,
-      neo4j.auth.basic(config.neo4j.user, config.neo4j.password),
-      {
-        maxConnectionPoolSize: 50,
-        connectionAcquisitionTimeout: 10000,
-      }
-    );
+    if (!uri || uri === 'bolt://localhost:7687') {
+      console.log('⚠️ Neo4j not configured, skipping connection');
+      return;
+    }
+    
+    console.log(`🔌 Connecting to Neo4j at ${uri}...`);
     
     try {
+      this.driver = neo4j.driver(
+        uri,
+        neo4j.auth.basic(user, password),
+        {
+          maxConnectionPoolSize: 50,
+          connectionAcquisitionTimeout: 10000,
+        }
+      );
+      
       await this.driver.verifyConnectivity();
       console.log('✅ Neo4j connected successfully');
       await this.initializeConstraints();
     } catch (error: any) {
       const errorMsg = error?.message || String(error);
-      console.error('❌ Neo4j connection failed:');
-      console.error(`   URI: ${config.neo4j.uri}`);
-      console.error(`   User: ${config.neo4j.user}`);
-      console.error(`   Error: ${errorMsg}`);
-      console.error('');
-      console.error('   Possible solutions:');
-      console.error('   1. Start Neo4j with Docker: docker-compose up -d neo4j');
-      console.error('   2. Or install Neo4j Desktop from: https://neo4j.com/download/');
-      console.error('   3. Check if Neo4j is running on port 7687');
-      console.error('');
-      console.warn('⚠️ Using in-memory fallback for Neo4j');
+      console.error('❌ Neo4j connection failed:', errorMsg);
+      console.warn('⚠️ Continuing without Neo4j');
       this.driver = null;
     }
   }

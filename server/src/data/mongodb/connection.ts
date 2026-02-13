@@ -18,28 +18,26 @@ class MongoDBService {
   async connect(): Promise<void> {
     if (this.client) return;
     
-    console.log(`🔌 Connecting to MongoDB at ${config.mongodb.uri}...`);
+    const uri = config.mongodb.uri;
+    const database = config.mongodb.database;
+    
+    if (!uri || uri === 'mongodb://localhost:27017') {
+      console.log('⚠️ MongoDB not configured, skipping connection');
+      return;
+    }
+    
+    console.log(`🔌 Connecting to MongoDB at ${uri}...`);
     
     try {
-      this.client = new MongoClient(config.mongodb.uri);
+      this.client = new MongoClient(uri);
       await this.client.connect();
-      this.db = this.client.db(config.mongodb.database);
+      this.db = this.client.db(database);
       console.log('✅ MongoDB connected successfully');
       await this.initializeIndexes();
     } catch (error: any) {
       const errorMsg = error?.message || String(error);
-      console.error('❌ MongoDB connection failed:');
-      console.error(`   URI: ${config.mongodb.uri}`);
-      console.error(`   Database: ${config.mongodb.database}`);
-      console.error(`   Error: ${errorMsg}`);
-      console.error('');
-      console.error('   Possible solutions:');
-      console.error('   1. Start MongoDB with Docker: docker-compose up -d mongodb');
-      console.error('   2. Or install MongoDB Community from: https://www.mongodb.com/try/download/community');
-      console.error('   3. Check if MongoDB is running on port 27017');
-      console.error('   4. Verify credentials in .env file');
-      console.error('');
-      console.warn('⚠️ Using in-memory fallback for MongoDB');
+      console.error('❌ MongoDB connection failed:', errorMsg);
+      console.warn('⚠️ Continuing without MongoDB');
       this.client = null;
       this.db = null;
     }
