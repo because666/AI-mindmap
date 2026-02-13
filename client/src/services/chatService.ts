@@ -1,6 +1,16 @@
 import type { APIConfig, ChatMessage } from '../types';
 
-const API_BASE_URL = 'http://localhost:3001';
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  if (import.meta.env.PROD) {
+    return '';
+  }
+  return 'http://localhost:3001';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 /**
  * AI聊天服务

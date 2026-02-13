@@ -45,7 +45,11 @@ const APIConfigPanel: React.FC = () => {
     setTestResult(null);
 
     try {
-      const response = await fetch('http://localhost:3001/api/ai/test', {
+      let apiUrl = import.meta.env.VITE_API_URL || '';
+      if (!apiUrl && !import.meta.env.PROD) {
+        apiUrl = 'http://localhost:3001';
+      }
+      const response = await fetch(`${apiUrl}/api/ai/test`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
