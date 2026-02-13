@@ -13,7 +13,7 @@ interface NodeEditorProps {
  * 节点编辑器组件
  */
 const NodeEditor: React.FC<NodeEditorProps> = ({ nodeId, isOpen, onClose, allNodes }) => {
-  const { updateNode, deleteNode, nodes } = useAppStore();
+  const { updateNode, deleteNode } = useAppStore();
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
   const [tags, setTags] = useState<string[]>([]);

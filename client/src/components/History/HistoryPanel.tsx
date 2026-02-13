@@ -10,7 +10,7 @@ interface HistoryPanelProps {
 /**
  * 历史版本管理面板
  */
-const HistoryPanel: React.FC<HistoryPanelProps> = ({ isOpen, onClose }) => {
+const HistoryPanel: React.FC<HistoryPanelProps> = ({ isOpen, onClose: _onClose }) => {
   const { history, historyIndex, undo, redo } = useAppStore();
 
   const canUndo = historyIndex >= 0;

@@ -21,7 +21,7 @@ interface APIConfigState {
  */
 export const useAPIConfigStore = create<APIConfigState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       config: DEFAULT_API_CONFIG,
       
       /**

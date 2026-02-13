@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Loader2, Trash2, User, Bot, Sparkles, Settings, GitBranch, MessageSquare } from 'lucide-react';
-import { useAppStore, type NodeData } from '../../stores/appStore';
+import { Send, Loader2, Trash2, User, Bot, Sparkles, GitBranch, MessageSquare } from 'lucide-react';
+import { useAppStore } from '../../stores/appStore';
 import { useAPIConfigStore } from '../../stores/apiConfigStore';
 import { chatService } from '../../services/chatService';
 

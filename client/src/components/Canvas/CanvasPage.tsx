@@ -97,13 +97,6 @@ const CustomNode: React.FC<{
 };
 
 /**
- * 节点类型映射
- */
-const nodeTypes = {
-  custom: CustomNode,
-};
-
-/**
  * 思维画布组件
  */
 const CanvasPage: React.FC = () => {
@@ -146,6 +139,7 @@ const CanvasPage: React.FC = () => {
         const conversation = node.conversationId ? conversations.get(node.conversationId) : null;
         return {
           id: node.id,
+          type: 'custom',
           position: node.position,
           data: {
             label: node.title,
@@ -263,8 +257,8 @@ const CanvasPage: React.FC = () => {
     return allEdges;
   }, [relations, nodesArray]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes] = useNodesState(initialNodes);
+  const [edges, setEdges] = useEdgesState(initialEdges);
 
   // 调试：打印 edges 变化
   React.useEffect(() => {
@@ -311,7 +305,7 @@ const CanvasPage: React.FC = () => {
       if (edgePaths.length > 0) {
         edgePaths.forEach((path, i) => {
           const d = path.getAttribute('d');
-          const stroke = path.getAttribute('stroke') || path.style.stroke;
+          const stroke = path.getAttribute('stroke') || (path as SVGElement).style.stroke;
           console.log(`Edge path ${i}: d=${d?.substring(0, 50)}..., stroke=${stroke}`);
         });
       }
@@ -697,6 +691,7 @@ const CanvasPage: React.FC = () => {
         onNodeClick={onNodeClick}
         onNodeDoubleClick={onNodeDoubleClick}
         onNodeDragStop={onNodeDragStop}
+        nodeTypes={{ custom: CustomNode }}
         fitView
       >
         <Background color="#334155" gap={20} />

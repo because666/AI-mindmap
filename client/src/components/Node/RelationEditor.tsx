@@ -21,7 +21,7 @@ const RelationEditor: React.FC<RelationEditorProps> = ({
   targetNodeId: initialTargetId,
   allNodes
 }) => {
-  const { addRelation, relations } = useAppStore();
+  const { addRelation } = useAppStore();
   const [sourceId, setSourceId] = useState(initialSourceId || '');
   const [targetId, setTargetId] = useState(initialTargetId || '');
   const [relationType, setRelationType] = useState<RelationType>('supports');

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { IMessage, AIProvider } from '../types';
+import type { IMessage } from '../types';
 
 /**
  * 对话状态接口

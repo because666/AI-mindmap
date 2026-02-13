@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Search, X, MapPin } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 
@@ -12,7 +12,7 @@ interface SearchPanelProps {
  * 全局搜索面板组件
  */
 const SearchPanel: React.FC<SearchPanelProps> = ({ isOpen, onClose, onNodeSelect }) => {
-  const { searchQuery, setSearchQuery, searchResults, nodes, conversations } = useAppStore();
+  const { searchQuery, setSearchQuery, searchResults, nodes } = useAppStore();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {

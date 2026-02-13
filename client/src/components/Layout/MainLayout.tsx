@@ -16,9 +16,8 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'canvas' | 'chat'>('canvas');
-  const [isChatAnimating, setIsChatAnimating] = useState(false);
   
-  const { selectedNodeId, selectNode, undo, redo, history, historyIndex, nodes } = useAppStore();
+  const { selectedNodeId, selectNode, undo, redo, history, historyIndex } = useAppStore();
   const { autoOpenChatOnLoad, chatPanelWidth } = useUISettingsStore();
   
   const canUndo = historyIndex >= 0;
@@ -32,34 +31,24 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       const timer = setTimeout(() => {
         setIsChatOpen(true);
         setActiveTab('chat');
-        setIsChatAnimating(true);
       }, 300);
       return () => clearTimeout(timer);
     }
   }, [autoOpenChatOnLoad]);
 
   /**
-   * 打开对话窗口（带动画）
+   * 打开对话窗口
    */
   const openChat = () => {
-    setIsChatAnimating(true);
     setIsChatOpen(true);
     setActiveTab('chat');
   };
 
   /**
-   * 关闭对话窗口（带动画）
+   * 关闭对话窗口
    */
   const closeChat = () => {
-    setIsChatAnimating(true);
     setIsChatOpen(false);
-  };
-
-  /**
-   * 处理对话面板动画结束
-   */
-  const handleChatAnimationEnd = () => {
-    setIsChatAnimating(false);
   };
 
   /**
@@ -183,7 +172,6 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             isChatOpen ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full pointer-events-none absolute right-0'
           }`}
           style={{ width: isChatOpen ? chatPanelWidth : 0 }}
-          onTransitionEnd={handleChatAnimationEnd}
         >
           <div className="flex items-center justify-between px-4 py-2 border-b border-dark-700 bg-dark-800">
             <div className="flex items-center gap-2">

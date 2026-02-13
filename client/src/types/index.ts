@@ -161,3 +161,11 @@ export interface StreamEvent {
   content?: string;
   error?: string;
 }
+
+/**
+ * 聊天消息接口
+ */
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
