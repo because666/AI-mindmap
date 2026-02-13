@@ -108,18 +108,27 @@ async function startServer() {
   try {
     console.log('🔄 Connecting to databases...');
     
-    await Promise.all([
+    const dbConnections = await Promise.allSettled([
       neo4jService.connect(),
       mongoDBService.connect(),
       vectorDBService.initialize(),
     ]);
     
-    console.log('✅ All databases connected');
+    const failedConnections = dbConnections.filter(r => r.status === 'rejected');
+    if (failedConnections.length > 0) {
+      console.warn(`⚠️ ${failedConnections.length} database connection(s) failed, continuing with limited functionality`);
+    }
     
-    app.listen(config.server.port, config.server.host, () => {
+    const connectedCount = dbConnections.filter(r => r.status === 'fulfilled').length;
+    console.log(`✅ ${connectedCount}/3 database services connected`);
+    
+    const port = config.server.port;
+    const host = '0.0.0.0';
+    
+    app.listen(port, host, () => {
       console.log('');
       console.log('🚀 DeepMindMap Server v2.0');
-      console.log(`📍 Address: http://${config.server.host}:${config.server.port}`);
+      console.log(`📍 Address: http://${host}:${port}`);
       console.log(`⏰ Time: ${new Date().toLocaleString('zh-CN')}`);
       console.log('');
     });

@@ -2,10 +2,11 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+COPY package*.json ./
 COPY client/package*.json ./client/
 COPY server/package*.json ./server/
-COPY package*.json ./
 
+WORKDIR /app
 RUN npm install
 
 WORKDIR /app/client
@@ -29,7 +30,11 @@ COPY --from=builder /app/client/dist ./client/dist
 
 ENV NODE_ENV=production
 ENV PORT=3001
+ENV HOST=0.0.0.0
 
 EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
 
 CMD ["node", "dist/index.js"]
