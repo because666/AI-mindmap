@@ -7,17 +7,10 @@
       "name": "server",
       "type": "web",
       "source": {
-        "type": "node",
-        "path": "server"
-      },
-      "build": {
-        "command": "cd ../client && npm install && npm run build && cd ../server && npm install && npm run build"
-      },
-      "start": {
-        "command": "npm start"
+        "type": "docker",
+        "path": "/"
       },
       "env": {
-        "PORT": "3001",
         "MONGODB_URI": "${MONGODB_URI}",
         "NEO4J_URI": "${NEO4J_URI}",
         "NEO4J_USER": "${NEO4J_USER}",
