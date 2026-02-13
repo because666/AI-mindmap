@@ -213,7 +213,16 @@ const CanvasPage: React.FC = () => {
       const edge: Edge = {
         id: relation.id,
         source: relation.sourceId,
-        target: relation.targetId
+        target: relation.targetId,
+        type: 'smoothstep',
+        style: { 
+          stroke: color, 
+          strokeWidth: 2 
+        },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: color
+        }
       };
       
       if (!isParentChild) {
