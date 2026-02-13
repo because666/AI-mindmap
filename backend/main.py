@@ -138,6 +138,7 @@ print(f"静态文件目录: {static_dir}, 存在: {os.path.exists(static_dir)}")
 # ============== API路由 ==============
 
 @app.get("/api/health")
+@app.get("/api/healthy")
 async def health_check():
     """健康检查端点"""
     return {"status": "healthy"}
@@ -760,6 +761,13 @@ def serve_spa(request_path: str) -> str:
     Returns:
         文件路径或None
     """
+    # 根路径返回 index.html
+    if request_path == "/" or request_path == "":
+        index_path = os.path.join(static_dir, "index.html")
+        if os.path.isfile(index_path):
+            return index_path
+        return None
+    
     # 静态资源文件（有扩展名）
     filename = request_path.lstrip("/")
     if filename and "." in filename.split("/")[-1]:
@@ -773,6 +781,32 @@ def serve_spa(request_path: str) -> str:
         return index_path
     
     return None
+
+
+@app.get("/")
+async def serve_root():
+    """
+    处理根路径请求
+    
+    Returns:
+        前端页面或API信息
+    """
+    # 如果静态目录不存在，返回API信息
+    if not os.path.exists(static_dir):
+        return {
+            "name": "思流图（ThinkFlowMap）API",
+            "version": "1.0.0",
+            "status": "running",
+            "ai_service_ready": app_state.ai_service is not None,
+            "hint": "前端静态文件未部署，请检查构建配置"
+        }
+    
+    # 获取 index.html
+    file_path = serve_spa("/")
+    if file_path:
+        return FileResponse(file_path)
+    
+    return {"error": "index.html not found"}
 
 
 @app.get("/{full_path:path}")
