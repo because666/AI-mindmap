@@ -11,6 +11,8 @@
         "path": "/"
       },
       "env": {
+        "NODE_ENV": "production",
+        "PORT": "3001",
         "MONGODB_URI": "${MONGODB_URI}",
         "NEO4J_URI": "${NEO4J_URI}",
         "NEO4J_USER": "${NEO4J_USER}",

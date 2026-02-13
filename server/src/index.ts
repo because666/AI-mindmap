@@ -20,6 +20,14 @@ import conversationsRouter from './routes/conversations';
 import searchRouter from './routes/search';
 import aiRouter from './routes/ai';
 
+console.log('='.repeat(50));
+console.log('🚀 DeepMindMap Server Starting...');
+console.log('='.repeat(50));
+console.log(`📅 Time: ${new Date().toISOString()}`);
+console.log(`🌍 NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+console.log(`📁 Working Directory: ${process.cwd()}`);
+console.log('='.repeat(50));
+
 const app = express();
 
 app.use(helmet({
@@ -69,10 +77,12 @@ app.use('/api/ai', aiRouter);
 app.use(errorHandler);
 
 const clientDistPath = process.env.CLIENT_DIST_PATH || path.join(__dirname, '../../client/dist');
-console.log('Client dist path:', clientDistPath);
-console.log('Client dist exists:', fs.existsSync(clientDistPath));
+console.log('📂 Client dist path:', clientDistPath);
+console.log('📂 Client dist exists:', fs.existsSync(clientDistPath));
+console.log('📂 Current __dirname:', __dirname);
 
 if (fs.existsSync(clientDistPath)) {
+  console.log('✅ Serving static files from:', clientDistPath);
   app.use(express.static(clientDistPath));
   
   app.get('*', (req, res, next) => {
@@ -89,7 +99,7 @@ if (fs.existsSync(clientDistPath)) {
     });
   });
 } else {
-  console.warn('Client dist not found at:', clientDistPath);
+  console.warn('⚠️ Client dist not found at:', clientDistPath);
   app.get('*', (req, res) => {
     if (req.path.startsWith('/api/')) {
       return res.status(404).json({
@@ -106,6 +116,7 @@ if (fs.existsSync(clientDistPath)) {
 
 async function startServer() {
   try {
+    console.log('');
     console.log('🔄 Connecting to databases...');
     
     const dbConnections = await Promise.allSettled([
@@ -117,6 +128,11 @@ async function startServer() {
     const failedConnections = dbConnections.filter(r => r.status === 'rejected');
     if (failedConnections.length > 0) {
       console.warn(`⚠️ ${failedConnections.length} database connection(s) failed, continuing with limited functionality`);
+      failedConnections.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.warn(`   - Connection ${index + 1}: ${result.reason}`);
+        }
+      });
     }
     
     const connectedCount = dbConnections.filter(r => r.status === 'fulfilled').length;
@@ -125,31 +141,66 @@ async function startServer() {
     const port = config.server.port;
     const host = '0.0.0.0';
     
-    app.listen(port, host, () => {
+    const server = app.listen(port, host, () => {
       console.log('');
-      console.log('🚀 DeepMindMap Server v2.0');
+      console.log('='.repeat(50));
+      console.log('🚀 DeepMindMap Server v2.0 Started Successfully');
+      console.log('='.repeat(50));
       console.log(`📍 Address: http://${host}:${port}`);
       console.log(`⏰ Time: ${new Date().toLocaleString('zh-CN')}`);
+      console.log('='.repeat(50));
       console.log('');
     });
+
+    server.on('error', (error: any) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${port} is already in use`);
+      } else {
+        console.error('❌ Server error:', error);
+      }
+      process.exit(1);
+    });
+
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error('❌ Failed to start server:', error);
     process.exit(1);
   }
 }
 
 process.on('SIGINT', async () => {
   console.log('\n🔄 Shutting down gracefully...');
-  await neo4jService.disconnect();
-  await mongoDBService.disconnect();
-  process.exit(0);
+  try {
+    await neo4jService.disconnect();
+    await mongoDBService.disconnect();
+    console.log('✅ Cleanup completed');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
 });
 
 process.on('SIGTERM', async () => {
   console.log('\n🔄 Shutting down gracefully...');
-  await neo4jService.disconnect();
-  await mongoDBService.disconnect();
-  process.exit(0);
+  try {
+    await neo4jService.disconnect();
+    await mongoDBService.disconnect();
+    console.log('✅ Cleanup completed');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
 });
 
 startServer();
