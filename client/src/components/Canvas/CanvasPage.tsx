@@ -142,6 +142,7 @@ const CanvasPage: React.FC = () => {
         const conversation = node.conversationId ? conversations.get(node.conversationId) : null;
         return {
           id: node.id,
+          type: 'custom',
           position: node.position,
           data: {
             label: node.title,
@@ -693,6 +694,7 @@ const CanvasPage: React.FC = () => {
         onNodeClick={onNodeClick}
         onNodeDoubleClick={onNodeDoubleClick}
         onNodeDragStop={onNodeDragStop}
+        nodeTypes={{ custom: CustomNode }}
         fitView
       >
         <Background color="#334155" gap={20} />
