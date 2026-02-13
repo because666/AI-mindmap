@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import path from 'path';
+import fs from 'fs';
 import { config } from './config';
 import { 
   rateLimiter, 
@@ -72,22 +73,28 @@ app.use('/api/ai', aiRouter);
 
 app.use(errorHandler);
 
-const clientDistPath = path.join(__dirname, '../../client/dist');
-app.use(express.static(clientDistPath));
+const clientDistPath = process.env.CLIENT_DIST_PATH || path.join(__dirname, '../../client/dist');
+console.log('Client dist path:', clientDistPath);
 
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({
-      success: false,
-      error: 'Not found',
+if (fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+  
+  app.get('*', (req, res, next) => {
+    res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
+      if (err) {
+        next(err);
+      }
     });
-  }
-  res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
-    if (err) {
-      next(err);
-    }
   });
-});
+} else {
+  console.warn('Client dist not found at:', clientDistPath);
+  app.get('*', (req, res) => {
+    res.status(404).json({
+      success: false,
+      error: 'Client not built',
+    });
+  });
+}
 
 async function startServer() {
   try {
