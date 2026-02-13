@@ -26,12 +26,7 @@ app.use(helmet({
   contentSecurityPolicy: false,
 }));
 app.use(cors({
-  origin: [
-    'http://localhost:5173', 
-    'http://localhost:5174',
-    'https://stu.zeabur.app',
-    /\.zeabur\.app$/
-  ],
+  origin: '*',
   credentials: true,
 }));
 app.use(compression());
@@ -75,11 +70,18 @@ app.use(errorHandler);
 
 const clientDistPath = process.env.CLIENT_DIST_PATH || path.join(__dirname, '../../client/dist');
 console.log('Client dist path:', clientDistPath);
+console.log('Client dist exists:', fs.existsSync(clientDistPath));
 
 if (fs.existsSync(clientDistPath)) {
   app.use(express.static(clientDistPath));
   
   app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).json({
+        success: false,
+        error: 'API endpoint not found',
+      });
+    }
     res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
       if (err) {
         next(err);
@@ -89,6 +91,12 @@ if (fs.existsSync(clientDistPath)) {
 } else {
   console.warn('Client dist not found at:', clientDistPath);
   app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).json({
+        success: false,
+        error: 'API endpoint not found',
+      });
+    }
     res.status(404).json({
       success: false,
       error: 'Client not built',
