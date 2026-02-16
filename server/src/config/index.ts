@@ -28,7 +28,9 @@ export const config = {
   
   ai: {
     openaiApiKey: process.env.OPENAI_API_KEY || '',
-    defaultModel: process.env.DEFAULT_MODEL || 'gpt-4o-mini',
+    zhipuApiKey: process.env.ZHIPU_API_KEY || '86caae47a88e4ca48af7fab4e5991e30.BK5mPaWKGKgALsla',
+    defaultProvider: process.env.DEFAULT_PROVIDER || 'zhipu',
+    defaultModel: process.env.DEFAULT_MODEL || 'glm-4-flash',
     embeddingModel: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
   },
   

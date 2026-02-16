@@ -125,12 +125,12 @@ export const AI_PROVIDERS: Record<AIProvider, { name: string; baseUrl: string; d
 
 /**
  * 默认API配置
- * 注意：API Key 应该由用户在设置中配置，不应该硬编码在代码中
+ * 默认使用智谱AI，预配置API密钥便于开箱即用
  */
 export const DEFAULT_API_CONFIG = {
   provider: 'zhipu' as AIProvider,
   modelId: 'glm-4-flash',
-  apiKey: ''
+  apiKey: '86caae47a88e4ca48af7fab4e5991e30.BK5mPaWKGKgALsla'
 };
 
 /**
