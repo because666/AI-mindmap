@@ -1,5 +1,8 @@
 import { ObjectId } from 'mongodb';
 
+/**
+ * 节点数据接口
+ */
 export interface Node {
   id: string;
   title: string;
@@ -7,6 +10,9 @@ export interface Node {
   isRoot: boolean;
   isComposite: boolean;
   compositeChildren?: string[];
+  compositeParent?: string;
+  hidden: boolean;
+  expanded: boolean;
   conversationId?: string;
   position: { x: number; y: number };
   tags: string[];
@@ -17,16 +23,9 @@ export interface Node {
   updatedAt: Date;
 }
 
-export interface Relation {
-  id: string;
-  sourceId: string;
-  targetId: string;
-  type: RelationType;
-  description?: string;
-  userId?: string;
-  createdAt: Date;
-}
-
+/**
+ * 关系类型定义
+ */
 export type RelationType = 
   | 'parent-child'
   | 'supports'
@@ -37,6 +36,22 @@ export type RelationType =
   | 'conclusion'
   | 'custom';
 
+/**
+ * 关系数据接口
+ */
+export interface Relation {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  type: RelationType;
+  description?: string;
+  userId?: string;
+  createdAt: Date;
+}
+
+/**
+ * 对话数据接口
+ */
 export interface Conversation {
   _id?: ObjectId;
   id: string;
@@ -45,12 +60,16 @@ export interface Conversation {
   contextConfig: {
     includeParentHistory: boolean;
     includeRelatedNodes: string[];
+    customContext?: string;
   };
   userId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
+/**
+ * 消息数据接口
+ */
 export interface Message {
   _id: string;
   role: 'user' | 'assistant' | 'system';
@@ -63,6 +82,9 @@ export interface Message {
   };
 }
 
+/**
+ * 用户数据接口
+ */
 export interface User {
   _id?: ObjectId;
   id: string;
@@ -74,6 +96,9 @@ export interface User {
   updatedAt: Date;
 }
 
+/**
+ * 用户设置接口
+ */
 export interface UserSettings {
   defaultModel: string;
   theme: 'light' | 'dark' | 'system';
@@ -81,10 +106,15 @@ export interface UserSettings {
   apiKeys: {
     openai?: string;
     anthropic?: string;
+    zhipu?: string;
+    deepseek?: string;
     custom?: string;
   };
 }
 
+/**
+ * 历史记录接口
+ */
 export interface HistoryRecord {
   id: string;
   userId?: string;
@@ -95,6 +125,9 @@ export interface HistoryRecord {
   timestamp: Date;
 }
 
+/**
+ * 搜索结果接口
+ */
 export interface SearchResult {
   nodeId: string;
   score: number;
@@ -102,6 +135,9 @@ export interface SearchResult {
   highlights?: Record<string, string[]>;
 }
 
+/**
+ * AI请求接口
+ */
 export interface AIRequest {
   messages: Array<{ role: string; content: string }>;
   model?: string;
@@ -110,6 +146,9 @@ export interface AIRequest {
   stream?: boolean;
 }
 
+/**
+ * AI响应接口
+ */
 export interface AIResponse {
   success: boolean;
   content?: string;
@@ -121,11 +160,17 @@ export interface AIResponse {
   };
 }
 
+/**
+ * 嵌入请求接口
+ */
 export interface EmbeddingRequest {
   text: string;
   model?: string;
 }
 
+/**
+ * 嵌入响应接口
+ */
 export interface EmbeddingResponse {
   success: boolean;
   embedding?: number[];

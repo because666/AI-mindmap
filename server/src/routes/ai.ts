@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { aiService } from '../services/aiService';
 import { optionalAuth } from '../middleware';
-import { AIRequest } from '../types';
 
 const router = Router();
 
+/**
+ * 普通聊天接口（非流式）
+ */
 router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { messages, config, model, temperature, maxTokens } = req.body;
@@ -37,6 +39,69 @@ router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * 流式聊天接口（SSE）
+ */
+router.post('/chat/stream', optionalAuth, async (req: Request, res: Response) => {
+  try {
+    const { messages, config, model, temperature, maxTokens } = req.body;
+    
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Messages array is required',
+      });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    const chatModel = config?.model || model;
+    const chatProvider = config?.provider;
+    const apiKey = config?.apiKey;
+    const baseUrl = config?.baseUrl;
+
+    const stream = aiService.chatStream({
+      messages,
+      model: chatModel,
+      temperature,
+      maxTokens,
+      provider: chatProvider,
+      apiKey,
+      baseUrl,
+    });
+
+    let fullContent = '';
+
+    for await (const chunk of stream) {
+      fullContent += chunk;
+      
+      const data = JSON.stringify({ 
+        type: 'content', 
+        content: chunk,
+        fullContent 
+      });
+      res.write(`data: ${data}\n\n`);
+    }
+
+    res.write(`data: ${JSON.stringify({ type: 'done', fullContent })}\n\n`);
+    res.end();
+  } catch (error: any) {
+    const errorData = JSON.stringify({ 
+      type: 'error', 
+      error: error.message || 'An error occurred during streaming' 
+    });
+    res.write(`data: ${errorData}\n\n`);
+    res.end();
+  }
+});
+
+/**
+ * 测试 API 连接
+ */
 router.post('/test', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { provider, model, apiKey, baseUrl } = req.body;
@@ -61,7 +126,10 @@ router.post('/test', optionalAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.get('/models', (req: Request, res: Response) => {
+/**
+ * 获取可用模型列表
+ */
+router.get('/models', (_req: Request, res: Response) => {
   res.json({
     success: true,
     data: [
@@ -69,11 +137,18 @@ router.get('/models', (req: Request, res: Response) => {
       'gpt-4o',
       'gpt-4-turbo',
       'gpt-3.5-turbo',
+      'glm-4-flash',
+      'glm-4',
+      'deepseek-chat',
+      'deepseek-coder',
     ],
   });
 });
 
-router.get('/status', (req: Request, res: Response) => {
+/**
+ * 获取 AI 服务状态
+ */
+router.get('/status', (_req: Request, res: Response) => {
   res.json({
     success: true,
     configured: aiService.isConfigured(),

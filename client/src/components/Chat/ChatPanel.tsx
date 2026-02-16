@@ -1,15 +1,75 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Loader2, Trash2, User, Bot, Sparkles, GitBranch, MessageSquare } from 'lucide-react';
+import { Send, Loader2, Trash2, User, Bot, Sparkles, GitBranch, MessageSquare, Copy, Check } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useAPIConfigStore } from '../../stores/apiConfigStore';
 import { chatService } from '../../services/chatService';
+import type { StreamEvent } from '../../types';
+import MarkdownRenderer from './MarkdownRenderer';
 
 interface ChatPanelProps {
   nodeId?: string | null;
 }
 
 /**
- * 聊天面板组件 - 支持分支隔离上下文
+ * 消息内容组件
+ * 用于渲染单条消息，支持 Markdown 格式
+ */
+const MessageContent: React.FC<{
+  content: string;
+  role: 'user' | 'assistant' | 'system';
+}> = ({ content, role }) => {
+  const [copied, setCopied] = useState(false);
+
+  /**
+   * 复制消息内容
+   */
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  if (role === 'user') {
+    return (
+      <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{content}</p>
+    );
+  }
+
+  return (
+    <div className="relative group">
+      <MarkdownRenderer content={content} />
+      <button
+        onClick={handleCopy}
+        className="absolute top-0 right-0 p-1 opacity-0 group-hover:opacity-100 transition-opacity bg-dark-600 rounded text-dark-400 hover:text-white"
+        title="复制内容"
+      >
+        {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+      </button>
+    </div>
+  );
+};
+
+/**
+ * 流式消息组件
+ * 用于渲染正在生成的 AI 消息
+ */
+const StreamingMessage: React.FC<{
+  content: string;
+}> = ({ content }) => {
+  return (
+    <div className="relative group">
+      <MarkdownRenderer content={content} />
+      <span className="inline-block w-2 h-4 bg-primary-400 animate-pulse ml-0.5" />
+    </div>
+  );
+};
+
+/**
+ * 聊天面板组件 - 支持分支隔离上下文和流式传输
  */
 const ChatPanel: React.FC<ChatPanelProps> = ({ nodeId }) => {
   const { nodes, conversations, addConversation, addMessage, clearConversation, getConversationContext } = useAppStore();
@@ -17,16 +77,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ nodeId }) => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [streamingContent, setStreamingContent] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 获取当前节点的对话
   const node = nodeId ? nodes.get(nodeId) : null;
   const conversation = node?.conversationId ? conversations.get(node.conversationId) : null;
   const messages = conversation?.messages || [];
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, streamingContent]);
 
   /**
    * 获取上下文信息
@@ -48,12 +108,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ nodeId }) => {
     };
   }, [nodeId, node, getConversationContext]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
   /**
-   * 发送消息
+   * 发送消息（流式传输）
    */
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -70,8 +126,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ nodeId }) => {
     const userMessage = input.trim();
     setInput('');
     setError(null);
+    setStreamingContent('');
 
-    // 确保节点有对话
     let convId = node?.conversationId;
     if (!convId) {
       convId = addConversation(nodeId);
@@ -79,27 +135,37 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ nodeId }) => {
 
     setIsLoading(true);
 
-    // 添加用户消息
-    addMessage(convId, { role: 'user', content: userMessage });
-
-    // 获取完整的上下文消息
     const contextMessages = getConversationContext(nodeId);
     
-    // 构建完整消息列表（上下文 + 当前消息）
+    addMessage(convId, { role: 'user', content: userMessage });
+    
     const allMessages = [
       ...contextMessages,
       { role: 'user' as const, content: userMessage }
     ];
 
-    const result = await chatService.sendMessage(allMessages, config);
+    /**
+     * 流式回调函数
+     */
+    const handleStream = (event: StreamEvent) => {
+      if (event.type === 'content' && event.fullContent) {
+        setStreamingContent(event.fullContent);
+      } else if (event.type === 'error') {
+        setError(event.error || '发送消息失败');
+        setStreamingContent('');
+      }
+    };
+
+    const result = await chatService.sendMessageStream(allMessages, config, handleStream);
+
+    setIsLoading(false);
+    setStreamingContent('');
 
     if (result.success && result.content) {
       addMessage(convId, { role: 'assistant', content: result.content });
-    } else {
+    } else if (!result.success) {
       setError(result.error || '发送消息失败');
     }
-
-    setIsLoading(false);
   };
 
   /**
@@ -170,7 +236,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ nodeId }) => {
 
       {/* 消息列表 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 ? (
+        {messages.length === 0 && !streamingContent ? (
           <div className="text-center text-dark-400 py-8">
             <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-50" />
             <p className="text-lg font-medium text-white mb-1">开始与AI对话</p>
@@ -187,36 +253,51 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ nodeId }) => {
             )}
           </div>
         ) : (
-          messages.map((message) => (
-            <div
-              key={message._id}
-              className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
-            >
+          <>
+            {messages.map((message) => (
               <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  message.role === 'user' ? 'bg-primary-600' : 'bg-dark-700'
-                }`}
+                key={message._id}
+                className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
               >
-                {message.role === 'user' ? (
-                  <User className="w-4 h-4 text-white" />
-                ) : (
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    message.role === 'user' ? 'bg-primary-600' : 'bg-dark-700'
+                  }`}
+                >
+                  {message.role === 'user' ? (
+                    <User className="w-4 h-4 text-white" />
+                  ) : (
+                    <Bot className="w-4 h-4 text-primary-400" />
+                  )}
+                </div>
+                <div
+                  className={`max-w-[85%] px-4 py-2.5 rounded-2xl ${
+                    message.role === 'user'
+                      ? 'bg-primary-600 text-white rounded-tr-sm'
+                      : 'bg-dark-700 text-white rounded-tl-sm'
+                  }`}
+                >
+                  <MessageContent content={message.content} role={message.role} />
+                </div>
+              </div>
+            ))}
+            
+            {/* 流式消息显示 */}
+            {streamingContent && (
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center">
                   <Bot className="w-4 h-4 text-primary-400" />
-                )}
+                </div>
+                <div className="max-w-[85%] px-4 py-2.5 rounded-2xl bg-dark-700 text-white rounded-tl-sm">
+                  <StreamingMessage content={streamingContent} />
+                </div>
               </div>
-              <div
-                className={`max-w-[85%] px-4 py-2.5 rounded-2xl ${
-                  message.role === 'user'
-                    ? 'bg-primary-600 text-white rounded-tr-sm'
-                    : 'bg-dark-700 text-white rounded-tl-sm'
-                }`}
-              >
-                <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.content}</p>
-              </div>
-            </div>
-          ))
+            )}
+          </>
         )}
         
-        {isLoading && (
+        {/* 加载指示器（仅在等待首个字符时显示） */}
+        {isLoading && !streamingContent && (
           <div className="flex gap-3">
             <div className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center">
               <Loader2 className="w-4 h-4 text-primary-400 animate-spin" />
@@ -252,7 +333,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ nodeId }) => {
             onKeyDown={handleKeyDown}
             placeholder="输入消息... (Enter发送，Shift+Enter换行)"
             rows={1}
-            className="flex-1 px-4 py-2.5 bg-dark-700 border border-dark-600 rounded-xl text-white placeholder-dark-400 focus:border-primary-500 focus:outline-none resize-none transition-colors text-sm"
+            disabled={isLoading}
+            className="flex-1 px-4 py-2.5 bg-dark-700 border border-dark-600 rounded-xl text-white placeholder-dark-400 focus:border-primary-500 focus:outline-none resize-none transition-colors text-sm disabled:opacity-50"
           />
           <button
             onClick={handleSend}
@@ -263,7 +345,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ nodeId }) => {
           </button>
         </div>
         <p className="text-xs text-dark-500 mt-2 text-center">
-          对话上下文将自动包含父节点历史
+          对话上下文将自动包含父节点历史 · 支持流式输出
         </p>
       </div>
     </div>

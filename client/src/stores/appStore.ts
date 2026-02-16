@@ -104,11 +104,21 @@ export interface ConversationData {
 }
 
 /**
+ * 最大历史记录深度
+ */
+const MAX_CONTEXT_DEPTH = 20;
+
+/**
+ * 最大历史记录数量
+ */
+const MAX_HISTORY_SIZE = 50;
+
+/**
  * 应用状态接口
  */
 interface AppState {
   nodes: Map<string, NodeData>;
-  relations: RelationData[];  // 改用数组存储关系
+  relations: RelationData[];
   conversations: Map<string, ConversationData>;
   selectedNodeId: string | null;
   hoveredNodeId: string | null;
@@ -157,11 +167,18 @@ interface AppState {
 
 /**
  * 生成唯一ID
+ * @returns 唯一标识符字符串
  */
-const generateId = () => Math.random().toString(36).substring(2, 15);
+const generateId = (): string => {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`;
+};
 
 /**
  * 计算节点位置
+ * @param parentNode - 父节点
+ * @param siblingIndex - 兄弟节点索引
+ * @param siblingCount - 兄弟节点总数
+ * @returns 计算后的位置坐标
  */
 const calculateNodePosition = (
   parentNode: NodeData | null,
@@ -187,13 +204,86 @@ const calculateNodePosition = (
 };
 
 /**
+ * 创建默认节点数据
+ * @param id - 节点ID
+ * @param title - 节点标题
+ * @param position - 节点位置
+ * @param isRoot - 是否为根节点
+ * @returns 节点数据对象
+ */
+const createDefaultNode = (
+  id: string,
+  title: string,
+  position: { x: number; y: number },
+  isRoot: boolean = false
+): NodeData => ({
+  id,
+  title,
+  summary: '',
+  parentIds: [],
+  childrenIds: [],
+  isRoot,
+  isComposite: false,
+  compositeChildren: undefined,
+  compositeParent: undefined,
+  hidden: false,
+  conversationId: null,
+  position,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  tags: [],
+  expanded: true
+});
+
+/**
+ * 迁移节点数据格式
+ * @param node - 原始节点数据
+ * @returns 迁移后的节点数据
+ */
+const migrateNodeData = (node: any): NodeData => {
+  return {
+    ...node,
+    hidden: node.hidden ?? false,
+    expanded: node.expanded ?? true,
+    compositeParent: node.compositeParent ?? undefined,
+    compositeChildren: node.compositeChildren ?? undefined,
+    tags: node.tags ?? [],
+    summary: node.summary ?? '',
+    parentIds: node.parentIds ?? [],
+    childrenIds: node.childrenIds ?? []
+  };
+};
+
+/**
+ * 迁移关系数据格式
+ * @param relations - 原始关系数据
+ * @returns 迁移后的关系数据数组
+ */
+const migrateRelationsData = (relations: any): RelationData[] => {
+  if (!relations) return [];
+  
+  if (!Array.isArray(relations)) return [];
+  
+  if (relations.length === 0) return [];
+  
+  const firstItem = relations[0];
+  if (Array.isArray(firstItem) && firstItem.length === 2) {
+    return relations
+      .map((entry: any) => entry[1])
+      .filter((r: any) => r && r.type && r.id && r.sourceId && r.targetId);
+  }
+  
+  return relations.filter((r: any) => r && r.type && r.id && r.sourceId && r.targetId);
+};
+
+/**
  * 应用状态管理Store
  */
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
       nodes: new Map(),
-      relations: [],  // 改用数组
+      relations: [],
       conversations: new Map(),
       selectedNodeId: null,
       hoveredNodeId: null,
@@ -202,7 +292,11 @@ export const useAppStore = create<AppState>()(
       searchQuery: '',
       searchResults: [],
       
-      // 创建根节点
+      /**
+       * 创建根节点
+       * @param title - 节点标题
+       * @returns 新创建的节点ID
+       */
       createRootNode: (title = '新对话') => {
         const id = generateId();
         const existingRoots = Array.from(get().nodes.values()).filter(n => n.isRoot);
@@ -211,24 +305,7 @@ export const useAppStore = create<AppState>()(
           y: 100
         };
         
-        const newNode: NodeData = {
-          id,
-          title,
-          summary: '',
-          parentIds: [],
-          childrenIds: [],
-          isRoot: true,
-          isComposite: false,
-          compositeChildren: undefined,
-          compositeParent: undefined,
-          hidden: false,
-          conversationId: null,
-          position,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          tags: [],
-          expanded: true
-        };
+        const newNode = createDefaultNode(id, title, position, true);
         
         set((state) => {
           const newNodes = new Map(state.nodes);
@@ -240,14 +317,18 @@ export const useAppStore = create<AppState>()(
         return id;
       },
       
-      // 创建子节点
+      /**
+       * 创建子节点
+       * @param parentId - 父节点ID
+       * @param title - 节点标题
+       * @returns 新创建的节点ID
+       */
       createChildNode: (parentId, title = '新分支') => {
         const id = generateId();
         const relationId = generateId();
         const parent = get().nodes.get(parentId);
         
         if (!parent) {
-          console.error('Parent node not found');
           return '';
         }
         
@@ -255,22 +336,8 @@ export const useAppStore = create<AppState>()(
         const position = calculateNodePosition(parent, siblingCount, siblingCount + 1);
         
         const newNode: NodeData = {
-          id,
-          title,
-          summary: '',
-          parentIds: [parentId],
-          childrenIds: [],
-          isRoot: false,
-          isComposite: false,
-          compositeChildren: undefined,
-          compositeParent: undefined,
-          hidden: false,
-          conversationId: null,
-          position,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          tags: [],
-          expanded: true
+          ...createDefaultNode(id, title, position, false),
+          parentIds: [parentId]
         };
         
         const newRelation: RelationData = {
@@ -305,13 +372,9 @@ export const useAppStore = create<AppState>()(
             }
           });
           
-          const newRelations = [...state.relations, newRelation];
-          console.log('Creating child node with relation:', newRelation);
-          console.log('Total relations after creation:', newRelations.length);
-          
           return { 
             nodes: newNodes, 
-            relations: newRelations,
+            relations: [...state.relations, newRelation],
             selectedNodeId: id 
           };
         });
@@ -320,7 +383,11 @@ export const useAppStore = create<AppState>()(
         return id;
       },
       
-      // 添加节点
+      /**
+       * 添加节点
+       * @param node - 节点数据
+       * @returns 节点ID
+       */
       addNode: (node) => {
         const id = node.id;
         const newNode: NodeData = {
@@ -352,6 +419,11 @@ export const useAppStore = create<AppState>()(
         return id;
       },
       
+      /**
+       * 更新节点
+       * @param id - 节点ID
+       * @param updates - 更新内容
+       */
       updateNode: (id, updates) => {
         set((state) => {
           const newNodes = new Map(state.nodes);
@@ -369,6 +441,10 @@ export const useAppStore = create<AppState>()(
         get().pushHistory('update_node', `更新节点`);
       },
       
+      /**
+       * 删除节点
+       * @param id - 节点ID
+       */
       deleteNode: (id) => {
         set((state) => {
           const newNodes = new Map(state.nodes);
@@ -376,7 +452,10 @@ export const useAppStore = create<AppState>()(
           
           const node = newNodes.get(id);
           if (node) {
-            // 递归删除所有子节点
+            /**
+             * 递归删除所有子节点
+             * @param nodeId - 要删除的节点ID
+             */
             const deleteRecursive = (nodeId: string) => {
               const n = newNodes.get(nodeId);
               if (n) {
@@ -392,7 +471,6 @@ export const useAppStore = create<AppState>()(
             
             deleteRecursive(id);
             
-            // 从父节点的childrenIds中移除
             node.parentIds.forEach(parentId => {
               const parent = newNodes.get(parentId);
               if (parent) {
@@ -404,7 +482,6 @@ export const useAppStore = create<AppState>()(
             });
           }
           
-          // 删除相关关系（使用数组过滤）
           const newRelations = state.relations.filter(
             relation => relation.sourceId !== id && relation.targetId !== id
           );
@@ -420,15 +497,27 @@ export const useAppStore = create<AppState>()(
         get().pushHistory('delete_node', `删除节点`);
       },
       
+      /**
+       * 选择节点
+       * @param id - 节点ID
+       */
       selectNode: (id) => {
         set({ selectedNodeId: id });
       },
       
+      /**
+       * 悬停节点
+       * @param id - 节点ID
+       */
       hoverNode: (id) => {
         set({ hoveredNodeId: id });
       },
       
-      // 关系操作
+      /**
+       * 添加关系
+       * @param relation - 关系数据
+       * @returns 关系ID
+       */
       addRelation: (relation) => {
         const id = generateId();
         const newRelation: RelationData = {
@@ -437,18 +526,19 @@ export const useAppStore = create<AppState>()(
           createdAt: new Date()
         };
         
-        console.log('Adding new relation:', newRelation);
-        
-        set((state) => {
-          const newRelations = [...state.relations, newRelation];
-          console.log('Total relations after addRelation:', newRelations.length);
-          return { relations: newRelations };
-        });
+        set((state) => ({
+          relations: [...state.relations, newRelation]
+        }));
         
         get().pushHistory('create_relation', `创建关系: ${RELATION_TYPE_LABELS[relation.type].label}`);
         return id;
       },
       
+      /**
+       * 更新关系
+       * @param id - 关系ID
+       * @param updates - 更新内容
+       */
       updateRelation: (id, updates) => {
         set((state) => ({
           relations: state.relations.map(relation =>
@@ -457,6 +547,10 @@ export const useAppStore = create<AppState>()(
         }));
       },
       
+      /**
+       * 删除关系
+       * @param id - 关系ID
+       */
       deleteRelation: (id) => {
         set((state) => ({
           relations: state.relations.filter(relation => relation.id !== id)
@@ -465,13 +559,22 @@ export const useAppStore = create<AppState>()(
         get().pushHistory('delete_relation', `删除关系`);
       },
       
+      /**
+       * 获取节点相关的所有关系
+       * @param nodeId - 节点ID
+       * @returns 关系列表
+       */
       getRelationsForNode: (nodeId) => {
         return get().relations.filter(
           relation => relation.sourceId === nodeId || relation.targetId === nodeId
         );
       },
       
-      // 对话操作
+      /**
+       * 添加对话
+       * @param nodeId - 节点ID
+       * @returns 对话ID
+       */
       addConversation: (nodeId) => {
         const id = generateId();
         const newConversation: ConversationData = {
@@ -502,6 +605,11 @@ export const useAppStore = create<AppState>()(
         return id;
       },
       
+      /**
+       * 添加消息
+       * @param conversationId - 对话ID
+       * @param message - 消息内容
+       */
       addMessage: (conversationId, message) => {
         set((state) => {
           const newConversations = new Map(state.conversations);
@@ -524,6 +632,10 @@ export const useAppStore = create<AppState>()(
         });
       },
       
+      /**
+       * 清空对话
+       * @param conversationId - 对话ID
+       */
       clearConversation: (conversationId) => {
         set((state) => {
           const newConversations = new Map(state.conversations);
@@ -539,38 +651,67 @@ export const useAppStore = create<AppState>()(
         });
       },
       
-      // 获取节点的对话上下文（包含祖先节点历史）
+      /**
+       * 获取节点的对话上下文（包含祖先节点历史）
+       * 支持多父节点继承，完整追溯所有祖先链
+       * @param nodeId - 节点ID
+       * @returns 上下文消息列表（按时间顺序排列）
+       */
       getConversationContext: (nodeId) => {
         const { nodes, conversations, relations } = get();
         const contextMessages: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
         const visitedNodes = new Set<string>();
+        const nodeOrder: string[] = [];
         
-        const collectContext = (currentNodeId: string, depth: number = 0) => {
-          if (visitedNodes.has(currentNodeId) || depth > 20) return;
+        /**
+         * 拓扑排序收集节点顺序
+         * 确保父节点在子节点之前被处理
+         * @param currentNodeId - 当前节点ID
+         * @param depth - 递归深度
+         */
+        const collectNodeOrder = (currentNodeId: string, depth: number = 0) => {
+          if (visitedNodes.has(currentNodeId) || depth > MAX_CONTEXT_DEPTH) return;
           visitedNodes.add(currentNodeId);
           
           const currentNode = nodes.get(currentNodeId);
           if (!currentNode) return;
           
-          // 先收集祖先节点的上下文
+          /**
+           * 首先处理所有父节点（通过 parentIds）
+           * 这确保了父节点的上下文在子节点之前
+           */
           currentNode.parentIds.forEach(parentId => {
-            collectContext(parentId, depth + 1);
+            collectNodeOrder(parentId, depth + 1);
           });
           
-          // 收集通过关系连接的节点上下文（使用数组方法）
+          /**
+           * 然后处理通过关系连接的源节点
+           * 包括 supports, prerequisite, elaborates 等类型
+           */
           relations.forEach((relation) => {
-            if (relation.targetId === currentNodeId && relation.type !== 'parent-child') {
-              collectContext(relation.sourceId, depth + 1);
+            if (relation.targetId === currentNodeId) {
+              collectNodeOrder(relation.sourceId, depth + 1);
             }
           });
           
-          // 收集当前节点的对话
-          if (currentNode.conversationId) {
-            const conv = conversations.get(currentNode.conversationId);
+          nodeOrder.push(currentNodeId);
+        };
+        
+        collectNodeOrder(nodeId);
+        
+        /**
+         * 按拓扑顺序收集消息
+         */
+        nodeOrder.forEach(orderedNodeId => {
+          const node = nodes.get(orderedNodeId);
+          if (!node) return;
+          
+          if (node.conversationId) {
+            const conv = conversations.get(node.conversationId);
             if (conv && conv.messages.length > 0) {
               contextMessages.push({
                 role: 'system',
-                content: `[节点: ${currentNode.title}]`
+                content: `[节点: ${node.title}]`
               });
               conv.messages.forEach(msg => {
                 contextMessages.push({
@@ -580,13 +721,14 @@ export const useAppStore = create<AppState>()(
               });
             }
           }
-        };
+        });
         
-        collectContext(nodeId);
         return contextMessages;
       },
       
-      // 历史操作
+      /**
+       * 撤销操作
+       */
       undo: () => {
         const { history, historyIndex } = get();
         if (historyIndex >= 0) {
@@ -598,6 +740,9 @@ export const useAppStore = create<AppState>()(
         }
       },
       
+      /**
+       * 重做操作
+       */
       redo: () => {
         const { history, historyIndex } = get();
         if (historyIndex < history.length - 1) {
@@ -609,6 +754,13 @@ export const useAppStore = create<AppState>()(
         }
       },
       
+      /**
+       * 推送历史记录
+       * @param actionType - 操作类型
+       * @param description - 描述
+       * @param beforeState - 操作前状态
+       * @param afterState - 操作后状态
+       */
       pushHistory: (actionType, description, beforeState?, afterState?) => {
         const record: HistoryRecord = {
           id: generateId(),
@@ -622,6 +774,11 @@ export const useAppStore = create<AppState>()(
         set((state) => {
           const newHistory = state.history.slice(0, state.historyIndex + 1);
           newHistory.push(record);
+          
+          if (newHistory.length > MAX_HISTORY_SIZE) {
+            newHistory.shift();
+          }
+          
           return {
             history: newHistory,
             historyIndex: newHistory.length - 1
@@ -629,7 +786,10 @@ export const useAppStore = create<AppState>()(
         });
       },
       
-      // 搜索操作
+      /**
+       * 设置搜索查询
+       * @param query - 搜索关键词
+       */
       setSearchQuery: (query) => {
         set({ searchQuery: query });
         if (query.trim()) {
@@ -639,6 +799,9 @@ export const useAppStore = create<AppState>()(
         }
       },
       
+      /**
+       * 搜索节点
+       */
       searchNodes: () => {
         const { nodes, conversations, searchQuery } = get();
         if (!searchQuery.trim()) {
@@ -679,7 +842,11 @@ export const useAppStore = create<AppState>()(
         set({ searchResults: results });
       },
       
-      // 复合节点操作
+      /**
+       * 创建复合节点
+       * @param nodeIds - 要聚合的节点ID列表
+       * @param title - 复合节点标题
+       */
       createCompositeNode: (nodeIds, title) => {
         const compositeId = generateId();
         
@@ -741,6 +908,7 @@ export const useAppStore = create<AppState>()(
        * 切换聚合节点的展开/折叠状态
        * 展开时：子节点以扇形分布在聚合节点周围，聚合节点保持可见
        * 折叠时：子节点隐藏，恢复聚合节点状态
+       * @param nodeId - 复合节点ID
        */
       expandCompositeNode: (nodeId) => {
         set((state) => {
@@ -751,7 +919,6 @@ export const useAppStore = create<AppState>()(
             const isCurrentlyExpanded = node.expanded;
             
             if (isCurrentlyExpanded) {
-              // 折叠操作：隐藏子节点
               node.compositeChildren.forEach(childId => {
                 const child = newNodes.get(childId);
                 if (child) {
@@ -763,28 +930,24 @@ export const useAppStore = create<AppState>()(
                 }
               });
               
-              // 更新聚合节点状态为折叠
               newNodes.set(nodeId, {
                 ...node,
                 expanded: false
               });
             } else {
-              // 展开操作：计算子节点的扇形位置并显示
               const childCount = node.compositeChildren.length;
               const centerX = node.position.x;
               const centerY = node.position.y;
               
-              // 扇形布局参数
-              const baseRadius = 200; // 基础半径
-              const radius = Math.max(baseRadius, baseRadius + (childCount - 3) * 30); // 根据子节点数量调整半径
-              const spreadAngle = Math.min(180, 60 + childCount * 15); // 扇形角度，最大180度
+              const baseRadius = 200;
+              const radius = Math.max(baseRadius, baseRadius + (childCount - 3) * 30);
+              const spreadAngle = Math.min(180, 60 + childCount * 15);
               const startAngle = -spreadAngle / 2;
               const angleStep = childCount > 1 ? spreadAngle / (childCount - 1) : 0;
               
               node.compositeChildren.forEach((childId, index) => {
                 const child = newNodes.get(childId);
                 if (child) {
-                  // 计算扇形位置
                   const angle = (startAngle + angleStep * index) * Math.PI / 180;
                   const newX = centerX + Math.cos(angle) * radius;
                   const newY = centerY + Math.sin(angle) * radius;
@@ -798,7 +961,6 @@ export const useAppStore = create<AppState>()(
                 }
               });
               
-              // 更新聚合节点状态为展开（不删除）
               newNodes.set(nodeId, {
                 ...node,
                 expanded: true
@@ -812,12 +974,21 @@ export const useAppStore = create<AppState>()(
         get().pushHistory('update_node', `切换复合节点展开状态`);
       },
       
-      // 自动布局
+      /**
+       * 自动布局所有节点
+       */
       autoLayout: () => {
         set((state) => {
           const newNodes = new Map(state.nodes);
           const roots = Array.from(newNodes.values()).filter(n => n.isRoot);
           
+          /**
+           * 递归布局节点
+           * @param node - 当前节点
+           * @param x - X坐标
+           * @param y - Y坐标
+           * @param level - 层级
+           */
           const layoutNode = (node: NodeData, x: number, y: number, level: number) => {
             newNodes.set(node.id, { ...node, position: { x, y } });
             
@@ -846,54 +1017,18 @@ export const useAppStore = create<AppState>()(
         conversations: Array.from(state.conversations.entries())
       }),
       onRehydrateStorage: () => (state) => {
-        console.log('=== onRehydrateStorage called ===');
-        console.log('Raw state:', state);
-        
         if (state) {
-          console.log('Raw nodes:', state.nodes);
-          console.log('Raw relations:', state.relations);
-          
           state.nodes = new Map(state.nodes as any);
-          console.log('Converted nodes count:', state.nodes.size);
           
-          // 为旧节点添加 hidden 属性
           state.nodes.forEach((node: any) => {
-            if (node.hidden === undefined) {
-              node.hidden = false;
-            }
-            if (node.compositeParent === undefined) {
-              node.compositeParent = undefined;
-            }
+            const migratedNode = migrateNodeData(node);
+            state.nodes.set(node.id, migratedNode);
           });
           
-          // 处理旧数据格式：如果 relations 是 Map entries 格式，转换为数组
-          if (state.relations && !Array.isArray(state.relations)) {
-            console.log('Relations not array, converting to empty array');
-            state.relations = [];
-          }
-          // 如果 relations 数组中的元素是 [id, relation] 格式（Map entries），转换为纯数组
-          if (Array.isArray(state.relations) && state.relations.length > 0) {
-            console.log('First relation item:', state.relations[0]);
-            const firstItem = state.relations[0];
-            if (Array.isArray(firstItem) && firstItem.length === 2) {
-              console.log('Converting from Map entries format');
-              // 这是旧的 Map entries 格式，需要转换
-              state.relations = state.relations.map((entry: any) => entry[1]).filter(Boolean);
-            }
-          }
-          // 确保每个 relation 都有有效的 type 属性
-          if (Array.isArray(state.relations)) {
-            const beforeFilter = state.relations.length;
-            state.relations = state.relations.filter((r: any) => r && r.type);
-            console.log(`Filtered relations: ${beforeFilter} -> ${state.relations.length}`);
-          }
-          
-          console.log('Final relations count:', state.relations?.length || 0);
-          console.log('Final relations:', state.relations);
+          state.relations = migrateRelationsData(state.relations);
           
           state.conversations = new Map(state.conversations as any);
         }
-        console.log('=== End onRehydrateStorage ===');
       }
     }
   )

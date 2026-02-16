@@ -1,5 +1,8 @@
-import type { APIConfig, ChatMessage } from '../types';
+import type { APIConfig, ChatMessage, StreamEvent, StreamCallback } from '../types';
 
+/**
+ * 获取 API 基础 URL
+ */
 const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
@@ -12,6 +15,9 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
+/**
+ * 解析 JSON 响应
+ */
 async function parseJsonResponse(response: Response): Promise<any> {
   const contentType = response.headers.get('content-type');
   const text = await response.text();
@@ -40,11 +46,11 @@ async function parseJsonResponse(response: Response): Promise<any> {
 }
 
 /**
- * AI聊天服务
+ * AI 聊天服务
  */
 export const chatService = {
   /**
-   * 发送聊天消息
+   * 发送聊天消息（非流式）
    */
   async sendMessage(
     messages: ChatMessage[],
@@ -83,7 +89,121 @@ export const chatService = {
   },
 
   /**
-   * 测试API连接
+   * 发送流式聊天消息
+   * @param messages - 消息列表
+   * @param config - API 配置
+   * @param onStream - 流式回调函数
+   * @returns 最终结果
+   */
+  async sendMessageStream(
+    messages: ChatMessage[],
+    config: APIConfig,
+    onStream: StreamCallback
+  ): Promise<{ success: boolean; content?: string; error?: string }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/ai/chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
+        body: JSON.stringify({
+          messages,
+          config: {
+            provider: config.provider,
+            model: config.modelId,
+            apiKey: config.apiKey,
+            baseUrl: config.baseUrl
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return {
+          success: false,
+          error: `HTTP ${response.status}: ${errorText || 'Request failed'}`
+        };
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        return {
+          success: false,
+          error: '无法获取响应流'
+        };
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) {
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6)) as StreamEvent;
+              
+              if (data.type === 'content') {
+                finalContent = data.fullContent || finalContent + (data.content || '');
+                onStream({
+                  type: 'content',
+                  content: data.content,
+                  fullContent: finalContent
+                });
+              } else if (data.type === 'done') {
+                finalContent = data.fullContent || finalContent;
+                onStream({
+                  type: 'done',
+                  fullContent: finalContent
+                });
+              } else if (data.type === 'error') {
+                onStream({
+                  type: 'error',
+                  error: data.error
+                });
+                return {
+                  success: false,
+                  error: data.error
+                };
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE data:', e);
+            }
+          }
+        }
+      }
+
+      return {
+        success: true,
+        content: finalContent
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '网络错误';
+      onStream({
+        type: 'error',
+        error: errorMessage
+      });
+      return {
+        success: false,
+        error: errorMessage
+      };
+    }
+  },
+
+  /**
+   * 测试 API 连接
    */
   async testConnection(config: APIConfig): Promise<{ success: boolean; message?: string; error?: string }> {
     try {

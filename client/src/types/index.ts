@@ -159,8 +159,14 @@ export type StreamEventType = 'content' | 'done' | 'error';
 export interface StreamEvent {
   type: StreamEventType;
   content?: string;
+  fullContent?: string;
   error?: string;
 }
+
+/**
+ * 流式响应回调类型
+ */
+export type StreamCallback = (event: StreamEvent) => void;
 
 /**
  * 聊天消息接口

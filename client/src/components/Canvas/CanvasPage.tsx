@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { 
   ReactFlow, 
   Background, 
@@ -6,16 +6,34 @@ import {
   MiniMap, 
   MarkerType, 
   useNodesState, 
-  useEdgesState
+  useEdgesState,
+  BaseEdge,
+  getSmoothStepPath,
+  Handle,
+  Position,
+  ConnectionLineType
 } from '@xyflow/react';
-import type { Connection, Node, Edge, NodeProps } from '@xyflow/react';
+import type { Connection, Node, Edge, NodeProps, EdgeProps } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Plus, MessageSquare, Edit3, Link2, Layers, Trash2, Undo2, Redo2, GitBranch, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
 import { useAppStore, RELATION_TYPE_LABELS } from '../../stores/appStore';
 import NodeEditor from '../Node/NodeEditor';
 import RelationEditor from '../Node/RelationEditor';
 import CompositeNodeCreator from '../Node/CompositeNodeCreator';
-import TestEdges from './TestEdges';
+
+/**
+ * 关系类型颜色映射
+ */
+const RELATION_COLORS: Record<string, string> = {
+  'parent-child': '#22c55e',
+  'supports': '#22c55e',
+  'contradicts': '#ef4444',
+  'prerequisite': '#f59e0b',
+  'elaborates': '#3b82f6',
+  'references': '#a855f7',
+  'conclusion': '#06b6d4',
+  'custom': '#eab308'
+};
 
 interface CustomNodeData extends Record<string, unknown> {
   label: string; 
@@ -32,7 +50,87 @@ interface CustomNodeData extends Record<string, unknown> {
 type CustomNodeType = Node<CustomNodeData>;
 
 /**
- * 自定义节点组件
+ * 自定义边组件 - 显示关系标签
+ * 使用 smoothstep 路径类型
+ */
+const RelationEdge: React.FC<EdgeProps> = ({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style = {},
+  markerEnd,
+  label
+}) => {
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+    borderRadius: 16,
+  });
+
+  const edgeColor = (style as React.CSSProperties).stroke as string || '#22c55e';
+  const strokeWidth = (style as React.CSSProperties).strokeWidth as number || 2;
+  const strokeDasharray = (style as React.CSSProperties).strokeDasharray as string | undefined;
+
+  return (
+    <>
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        markerEnd={markerEnd}
+        style={{
+          stroke: edgeColor,
+          strokeWidth: strokeWidth,
+          strokeDasharray: strokeDasharray,
+        }}
+      />
+      {label && (
+        <g transform={`translate(${labelX}, ${labelY})`}>
+          <rect
+            x={-25}
+            y={-10}
+            width={50}
+            height={20}
+            rx={4}
+            fill={edgeColor}
+            opacity={0.9}
+          />
+          <text
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="#fff"
+            fontSize={10}
+            fontWeight={500}
+          >
+            {label}
+          </text>
+        </g>
+      )}
+    </>
+  );
+};
+
+/**
+ * 连接点样式配置
+ */
+const handleStyle = {
+  width: 12,
+  height: 12,
+  background: '#1e293b',
+  border: '2px solid #22c55e',
+  borderRadius: '50%',
+  transition: 'all 0.2s ease',
+};
+
+/**
+ * 自定义节点组件 - 包含连接点
  */
 const CustomNode: React.FC<NodeProps<CustomNodeType>> = ({ data, selected }) => {
   const nodeData = data as CustomNodeData;
@@ -49,6 +147,38 @@ const CustomNode: React.FC<NodeProps<CustomNodeType>> = ({ data, selected }) => 
               : 'bg-dark-700 border-dark-600 hover:border-primary-500'
       }`}
     >
+      {/* 顶部连接点 - 用于接收父节点连接 */}
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="top"
+        style={handleStyle}
+      />
+      
+      {/* 左侧连接点 - 用于接收其他关系连接 */}
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="left"
+        style={{ ...handleStyle, borderColor: '#3b82f6' }}
+      />
+      
+      {/* 右侧连接点 - 用于发出其他关系连接 */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="right"
+        style={{ ...handleStyle, borderColor: '#3b82f6' }}
+      />
+      
+      {/* 底部连接点 - 用于发出子节点连接 */}
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="bottom"
+        style={handleStyle}
+      />
+      
       <div className="flex items-center gap-2 mb-1">
         {nodeData.isComposite ? (
           <Layers className={`w-4 h-4 ${nodeData.isExpanded ? 'text-primary-300' : 'text-primary-400'}`} />
@@ -121,9 +251,7 @@ const CanvasPage: React.FC = () => {
     conversations
   } = useAppStore();
   
-  // nodesArray 用于检测节点变化
-  const nodesArray = React.useMemo(() => Array.from(storeNodes.values()), [storeNodes]);
-  // relations 已经是数组，直接使用
+  const nodesArray = useMemo(() => Array.from(storeNodes.values()), [storeNodes]);
   
   const [isNodeEditorOpen, setIsNodeEditorOpen] = useState(false);
   const [isRelationEditorOpen, setIsRelationEditorOpen] = useState(false);
@@ -132,82 +260,75 @@ const CanvasPage: React.FC = () => {
   const [selectedForComposite, setSelectedForComposite] = useState<string[]>([]);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [pendingConnection, setPendingConnection] = useState<{ source: string; target: string } | null>(null);
-  const [testMode, setTestMode] = useState(false);
 
-  // 转换store节点为ReactFlow节点
-  const initialNodes: Node[] = useMemo(() => {
-    return nodesArray
+  /**
+   * 转换store节点为ReactFlow节点
+   */
+  const flowNodes: Node[] = useMemo(() => {
+    const result = nodesArray
       .filter((node) => !node.hidden)
       .map((node) => {
         const conversation = node.conversationId ? conversations.get(node.conversationId) : null;
         return {
           id: node.id,
           type: 'custom',
-          position: node.position,
+          position: node.position || { x: 100, y: 100 },
           data: {
-            label: node.title,
+            label: node.title || '未命名节点',
             summary: node.summary,
             isRoot: node.isRoot,
             isComposite: node.isComposite,
             isExpanded: node.expanded,
-            childCount: node.compositeChildren?.length,
+            childCount: node.compositeChildren?.length || 0,
             conversationId: node.conversationId,
             messageCount: conversation?.messages.length || 0,
             onExpand: node.isComposite ? () => expandCompositeNode(node.id) : undefined
           }
         };
       });
+    console.log('[CanvasPage] flowNodes:', result.length, 'nodes');
+    return result;
   }, [nodesArray, conversations, expandCompositeNode]);
 
-  // 转换关系为边 - 只显示可见节点之间的边
-  const initialEdges: Edge[] = useMemo(() => {
-    console.log('=== Computing initialEdges ===');
-    console.log('relations:', relations);
-    console.log('relations type:', typeof relations, Array.isArray(relations));
+  /**
+   * 转换关系为边
+   */
+  const flowEdges: Edge[] = useMemo(() => {
+    const edges: Edge[] = [];
     
     if (!relations || !Array.isArray(relations)) {
-      console.log('No relations or not array, returning empty');
-      return [];
+      console.log('[CanvasPage] No relations array');
+      return edges;
     }
     
-    console.log('relations length:', relations.length);
+    console.log('[CanvasPage] Processing relations:', relations.length);
     
     const visibleNodeIds = new Set(nodesArray.filter(n => !n.hidden).map(n => n.id));
-    console.log('visibleNodeIds:', Array.from(visibleNodeIds));
+    console.log('[CanvasPage] Visible node IDs:', Array.from(visibleNodeIds));
     
-    // 收集展开的聚合节点及其子节点
-    const expandedCompositeNodes = nodesArray.filter(n => n.isComposite && n.expanded && n.compositeChildren);
-    
-    // 创建普通关系边
-    const relationEdges = relations.map((relation) => {
-      console.log('Processing relation:', relation);
-      
+    relations.forEach((relation) => {
       if (!relation || typeof relation !== 'object') {
-        console.log('Invalid relation object');
-        return null;
+        console.log('[CanvasPage] Invalid relation object');
+        return;
       }
+      
       if (!relation.type || !relation.id || !relation.sourceId || !relation.targetId) {
-        console.log('Missing required fields:', relation);
-        return null;
+        console.log('[CanvasPage] Missing relation fields:', relation);
+        return;
       }
       
-      if (!visibleNodeIds.has(relation.sourceId) || !visibleNodeIds.has(relation.targetId)) {
-        console.log('Source or target not visible:', relation.sourceId, relation.targetId);
-        return null;
+      const sourceVisible = visibleNodeIds.has(relation.sourceId);
+      const targetVisible = visibleNodeIds.has(relation.targetId);
+      
+      console.log('[CanvasPage] Relation:', relation.id, 
+        'source:', relation.sourceId, sourceVisible ? 'visible' : 'hidden',
+        'target:', relation.targetId, targetVisible ? 'visible' : 'hidden');
+      
+      if (!sourceVisible || !targetVisible) {
+        return;
       }
       
-      const colorMap: Record<string, string> = {
-        'parent-child': '#22c55e',
-        'supports': '#22c55e',
-        'contradicts': '#ef4444',
-        'prerequisite': '#f59e0b',
-        'elaborates': '#3b82f6',
-        'references': '#a855f7',
-        'conclusion': '#06b6d4',
-        'custom': '#eab308'
-      };
-      
-      const color = colorMap[relation.type] || '#eab308';
+      const color = RELATION_COLORS[relation.type] || '#eab308';
       const isParentChild = relation.type === 'parent-child';
       
       const edge: Edge = {
@@ -215,37 +336,46 @@ const CanvasPage: React.FC = () => {
         source: relation.sourceId,
         target: relation.targetId,
         type: 'smoothstep',
+        animated: false,
         style: { 
           stroke: color, 
           strokeWidth: 2 
         },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: color
-        }
+          color: color,
+          width: 20,
+          height: 20
+        },
+        sourceHandle: isParentChild ? 'bottom' : 'right',
+        targetHandle: isParentChild ? 'top' : 'left',
       };
       
       if (!isParentChild) {
-        edge.label = RELATION_TYPE_LABELS[relation.type]?.label;
+        edge.label = RELATION_TYPE_LABELS[relation.type]?.label || relation.type;
         edge.labelStyle = { fill: '#fff', fontSize: 10, fontWeight: 500 };
         edge.labelBgStyle = { fill: color, fillOpacity: 0.9 };
         edge.labelBgPadding = [4, 2] as [number, number];
+        edge.labelBgBorderRadius = 4;
       }
       
-      console.log('Created edge:', edge);
-      return edge;
-    }).filter(Boolean) as Edge[];
+      edges.push(edge);
+      console.log('[CanvasPage] Created edge:', edge.id, 'from', edge.source, 'to', edge.target);
+    });
     
-    // 创建聚合节点到子节点的分支连接线
-    const compositeEdges: Edge[] = [];
+    const expandedCompositeNodes = nodesArray.filter(n => n.isComposite && n.expanded && n.compositeChildren);
+    
     expandedCompositeNodes.forEach(compositeNode => {
       if (compositeNode.compositeChildren) {
         compositeNode.compositeChildren.forEach(childId => {
           if (visibleNodeIds.has(childId)) {
-            compositeEdges.push({
+            edges.push({
               id: `composite-${compositeNode.id}-${childId}`,
               source: compositeNode.id,
               target: childId,
+              type: 'smoothstep',
+              sourceHandle: 'bottom',
+              targetHandle: 'top',
               style: { 
                 stroke: '#8b5cf6', 
                 strokeWidth: 2,
@@ -261,175 +391,35 @@ const CanvasPage: React.FC = () => {
       }
     });
     
-    const allEdges = [...relationEdges, ...compositeEdges];
-    
-    console.log('Final edges count:', allEdges.length, '(relations:', relationEdges.length, ', composite:', compositeEdges.length, ')');
-    console.log('=== End initialEdges ===');
-    
-    return allEdges;
+    console.log('[CanvasPage] Total edges created:', edges.length);
+    return edges;
   }, [relations, nodesArray]);
 
-  const [nodes, setNodes] = useNodesState(initialNodes);
-  const [edges, setEdges] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
 
-  // 调试：打印 edges 变化
-  React.useEffect(() => {
-    console.log('edges changed:', edges.length, edges);
-  }, [edges]);
+  /**
+   * 同步store变化到ReactFlow
+   */
+  useEffect(() => {
+    console.log('[CanvasPage] Syncing nodes:', flowNodes.length);
+    setNodes(flowNodes);
+  }, [flowNodes, setNodes]);
 
-  // 同步store变化到ReactFlow
-  React.useEffect(() => {
-    console.log('Syncing initialNodes to ReactFlow:', initialNodes.length);
-    setNodes(initialNodes);
-  }, [initialNodes, setNodes]);
-
-  React.useEffect(() => {
-    console.log('Syncing initialEdges to ReactFlow:', initialEdges.length, initialEdges);
-    setEdges(initialEdges);
-  }, [initialEdges, setEdges]);
-
-  // 检查 DOM 中的边
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      const edgeElements = document.querySelectorAll('.react-flow__edge');
-      const edgePaths = document.querySelectorAll('.react-flow__edge-path');
-      const svgContainer = document.querySelector('.react-flow__edges');
-      const viewport = document.querySelector('.react-flow__viewport');
-      
-      console.log('=== DOM STRUCTURE ===');
-      console.log('viewport:', viewport);
-      console.log('svg edges container:', svgContainer);
-      console.log('DOM check - edge elements:', edgeElements.length);
-      console.log('DOM check - edge paths:', edgePaths.length);
-      
-      // 检查 SVG 容器的样式
-      if (svgContainer) {
-        const styles = window.getComputedStyle(svgContainer);
-        console.log('SVG container styles:', {
-          display: styles.display,
-          visibility: styles.visibility,
-          opacity: styles.opacity,
-          position: styles.position,
-          zIndex: styles.zIndex
-        });
-      }
-      
-      if (edgePaths.length > 0) {
-        edgePaths.forEach((path, i) => {
-          const d = path.getAttribute('d');
-          const stroke = path.getAttribute('stroke') || (path as SVGElement).style.stroke;
-          console.log(`Edge path ${i}: d=${d?.substring(0, 50)}..., stroke=${stroke}`);
-        });
-      }
-    }, 500);
-    
-    return () => clearTimeout(timer);
-  }, [edges]);
+  useEffect(() => {
+    console.log('[CanvasPage] Syncing edges:', flowEdges.length);
+    setEdges(flowEdges);
+  }, [flowEdges, setEdges]);
 
   const canUndo = historyIndex >= 0;
   const canRedo = historyIndex < history.length - 1;
-
-  /**
-   * 调试：打印当前状态
-   */
-  const debugState = useCallback(() => {
-    console.log('=== DEBUG STATE ===');
-    console.log('storeNodes size:', storeNodes.size);
-    
-    // 详细检查节点
-    console.log('=== NODES DETAIL ===');
-    nodesArray.forEach((n, i) => {
-      console.log(`Node ${i}: id=${n.id}, title=${n.title}, hidden=${n.hidden}, position=(${n.position.x}, ${n.position.y})`);
-    });
-    
-    // 详细检查关系
-    console.log('=== RELATIONS DETAIL ===');
-    relations.forEach((r, i) => {
-      console.log(`Relation ${i}: id=${r.id}, source=${r.sourceId}, target=${r.targetId}, type=${r.type}`);
-    });
-    
-    // 检查每条边的节点可见性
-    const visibleNodeIds = new Set(nodesArray.filter(n => !n.hidden).map(n => n.id));
-    console.log('Visible Node IDs:', Array.from(visibleNodeIds));
-    
-    console.log('=== EDGE VISIBILITY ===');
-    relations.forEach((r, i) => {
-      const sourceVisible = visibleNodeIds.has(r.sourceId);
-      const targetVisible = visibleNodeIds.has(r.targetId);
-      console.log(`Relation ${i}: source=${r.sourceId}(${sourceVisible}), target=${r.targetId}(${targetVisible}), willShow=${sourceVisible && targetVisible}`);
-    });
-    
-    console.log('initialNodes count:', initialNodes.length);
-    console.log('initialEdges count:', initialEdges.length);
-    
-    // 详细检查每条边
-    console.log('=== INITIAL EDGES ===');
-    initialEdges.forEach((e, i) => {
-      console.log(`Edge ${i}:`, JSON.stringify(e, null, 2));
-    });
-    
-    // 检查 ReactFlow 状态
-    console.log('=== REACTFLOW STATE ===');
-    console.log('ReactFlow nodes count:', nodes.length);
-    console.log('ReactFlow edges count:', edges.length);
-    
-    // 检查节点 ID 是否匹配
-    const nodeIds = new Set(nodes.map(n => n.id));
-    console.log('ReactFlow Node IDs:', Array.from(nodeIds));
-    
-    edges.forEach((e, i) => {
-      const sourceExists = nodeIds.has(e.source);
-      const targetExists = nodeIds.has(e.target);
-      console.log(`Edge ${i}: source=${e.source}(${sourceExists}), target=${e.target}(${targetExists})`);
-    });
-    
-    // 检查 DOM 中的边元素
-    setTimeout(() => {
-      const edgePaths = document.querySelectorAll('.react-flow__edge-path');
-      console.log('DOM edge-path elements:', edgePaths.length);
-      edgePaths.forEach((path, i) => {
-        const d = path.getAttribute('d');
-        const stroke = window.getComputedStyle(path).stroke;
-        console.log(`Edge path ${i}: d=${d?.substring(0, 50)}..., stroke=${stroke}`);
-      });
-    }, 100);
-    
-    console.log('=== END DEBUG ===');
-  }, [storeNodes, relations, nodesArray, initialNodes, initialEdges, nodes, edges]);
-
-  /**
-   * 清除存储并刷新
-   */
-  const clearStorage = useCallback(() => {
-    if (confirm('确定要清除所有数据吗？这将删除所有节点和关系。')) {
-      localStorage.removeItem('deep-mind-map-storage');
-      window.location.reload();
-    }
-  }, []);
-
-  /**
-   * 修复隐藏节点 - 重置所有节点的 hidden 状态
-   */
-  const fixHiddenNodes = useCallback(() => {
-    const { nodes, updateNode } = useAppStore.getState();
-    let fixedCount = 0;
-    
-    nodes.forEach((node, id) => {
-      if (node.hidden || node.compositeParent) {
-        updateNode(id, { hidden: false, compositeParent: undefined });
-        fixedCount++;
-      }
-    });
-    
-    console.log(`Fixed ${fixedCount} hidden nodes`);
-    alert(`已修复 ${fixedCount} 个隐藏节点，请刷新页面查看效果`);
-  }, []);
 
   /**
    * 连接节点 - 创建关系
    */
   const onConnect = useCallback(
     (params: Connection) => {
+      console.log('[CanvasPage] onConnect:', params);
       if (params.source && params.target) {
         setPendingConnection({ source: params.source, target: params.target });
         setIsRelationEditorOpen(true);
@@ -452,7 +442,6 @@ const CanvasPage: React.FC = () => {
    */
   const handleCreateChildNode = useCallback(() => {
     if (!selectedNodeId) {
-      alert('请先选择一个父节点');
       return;
     }
     
@@ -462,7 +451,7 @@ const CanvasPage: React.FC = () => {
   }, [selectedNodeId, createChildNode]);
 
   /**
-   * 节点点击
+   * 节点点击处理
    */
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
@@ -509,52 +498,76 @@ const CanvasPage: React.FC = () => {
   /**
    * 切换多选模式
    */
-  const toggleSelectMode = () => {
-    setIsSelectMode(!isSelectMode);
-    if (isSelectMode) {
-      setSelectedForComposite([]);
-    }
-  };
+  const toggleSelectMode = useCallback(() => {
+    setIsSelectMode(prev => {
+      if (prev) {
+        setSelectedForComposite([]);
+      }
+      return !prev;
+    });
+  }, []);
 
   /**
    * 创建复合节点
    */
-  const handleCreateComposite = () => {
+  const handleCreateComposite = useCallback(() => {
     if (selectedForComposite.length >= 2) {
       setIsCompositeCreatorOpen(true);
     }
-  };
+  }, [selectedForComposite.length]);
 
   /**
    * 删除选中节点
    */
-  const handleDeleteNode = () => {
+  const handleDeleteNode = useCallback(() => {
     if (selectedNodeId && confirm('确定要删除此节点及其所有子节点吗？')) {
       deleteNode(selectedNodeId);
     }
-  };
+  }, [selectedNodeId, deleteNode]);
+
+  /**
+   * 打开节点编辑器
+   */
+  const openNodeEditor = useCallback(() => {
+    setEditingNodeId(selectedNodeId);
+    setIsNodeEditorOpen(true);
+  }, [selectedNodeId]);
+
+  /**
+   * 关闭节点编辑器
+   */
+  const closeNodeEditor = useCallback(() => {
+    setIsNodeEditorOpen(false);
+    setEditingNodeId(null);
+  }, []);
+
+  /**
+   * 关闭关系编辑器
+   */
+  const closeRelationEditor = useCallback(() => {
+    setIsRelationEditorOpen(false);
+    setPendingConnection(null);
+  }, []);
+
+  /**
+   * 关闭复合节点创建器
+   */
+  const closeCompositeCreator = useCallback(() => {
+    setIsCompositeCreatorOpen(false);
+    setSelectedForComposite([]);
+    setIsSelectMode(false);
+  }, []);
+
+  const nodeTypes = useMemo(() => ({ custom: CustomNode }), []);
+  const edgeTypes = useMemo(() => ({ 
+    smoothstep: RelationEdge,
+    relation: RelationEdge 
+  }), []);
 
   return (
     <div className="h-full bg-dark-950 relative">
-      {/* 测试模式 */}
-      {testMode && (
-        <div className="absolute inset-0 z-50 bg-dark-900 p-4">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-white text-lg font-bold">ReactFlow 边测试</h2>
-            <button
-              onClick={() => setTestMode(false)}
-              className="px-4 py-2 bg-red-600 rounded-lg text-white"
-            >
-              关闭测试
-            </button>
-          </div>
-          <TestEdges />
-        </div>
-      )}
-      
       {/* 工具栏 */}
       <div className="absolute top-4 left-4 z-10 flex gap-2 flex-wrap">
-        {/* 创建节点按钮 */}
         <button
           onClick={handleCreateRootNode}
           className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 border border-primary-500 rounded-xl text-white hover:bg-primary-700 transition-all shadow-lg shadow-primary-600/20"
@@ -564,7 +577,6 @@ const CanvasPage: React.FC = () => {
           <span className="text-sm font-medium">创建对话</span>
         </button>
         
-        {/* 创建子节点按钮 */}
         {selectedNodeId && (
           <button
             onClick={handleCreateChildNode}
@@ -578,7 +590,6 @@ const CanvasPage: React.FC = () => {
         
         <div className="w-px bg-dark-600 h-10" />
         
-        {/* 撤销/重做 */}
         <button
           onClick={undo}
           disabled={!canUndo}
@@ -598,12 +609,8 @@ const CanvasPage: React.FC = () => {
         
         <div className="w-px bg-dark-600 h-10" />
         
-        {/* 编辑/删除 */}
         <button
-          onClick={() => {
-            setEditingNodeId(selectedNodeId);
-            setIsNodeEditorOpen(true);
-          }}
+          onClick={openNodeEditor}
           disabled={!selectedNodeId}
           className="p-2.5 bg-dark-700 border border-dark-600 rounded-xl text-white hover:bg-dark-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           title="编辑节点"
@@ -628,7 +635,6 @@ const CanvasPage: React.FC = () => {
         
         <div className="w-px bg-dark-600 h-10" />
         
-        {/* 多选/聚合 */}
         <button
           onClick={toggleSelectMode}
           className={`p-2.5 border rounded-xl transition-all ${
@@ -650,7 +656,6 @@ const CanvasPage: React.FC = () => {
           </button>
         )}
         
-        {/* 自动布局 */}
         <button
           onClick={autoLayout}
           className="p-2.5 bg-dark-700 border border-dark-600 rounded-xl text-white hover:bg-dark-600 transition-all"
@@ -658,60 +663,35 @@ const CanvasPage: React.FC = () => {
         >
           <LayoutGrid className="w-4 h-4" />
         </button>
-        
-        <div className="w-px bg-dark-600 h-10" />
-        
-        {/* 调试按钮 */}
-        <button
-          onClick={() => setTestMode(!testMode)}
-          className={`px-3 py-2.5 rounded-xl transition-all text-xs ${
-            testMode 
-              ? 'bg-green-600 border border-green-500 text-white' 
-              : 'bg-gray-600/20 border border-gray-500/50 text-gray-400'
-          }`}
-          title="切换测试模式"
-        >
-          {testMode ? '测试中' : '测试边'}
-        </button>
-        <button
-          onClick={debugState}
-          className="px-3 py-2.5 bg-yellow-600/20 border border-yellow-500/50 rounded-xl text-yellow-400 hover:bg-yellow-600/30 transition-all text-xs"
-          title="打印调试信息到控制台"
-        >
-          调试
-        </button>
-        <button
-          onClick={fixHiddenNodes}
-          className="px-3 py-2.5 bg-blue-600/20 border border-blue-500/50 rounded-xl text-blue-400 hover:bg-blue-600/30 transition-all text-xs"
-          title="修复隐藏的节点"
-        >
-          修复节点
-        </button>
-        <button
-          onClick={clearStorage}
-          className="px-3 py-2.5 bg-red-600/20 border border-red-500/50 rounded-xl text-red-400 hover:bg-red-600/30 transition-all text-xs"
-          title="清除所有数据"
-        >
-          清除数据
-        </button>
       </div>
 
       <ReactFlow
         nodes={nodes}
         edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
         onNodeDoubleClick={onNodeDoubleClick}
         onNodeDragStop={onNodeDragStop}
-        nodeTypes={{ custom: CustomNode }}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
+        fitViewOptions={{ padding: 0.2 }}
+        minZoom={0.1}
+        maxZoom={2}
+        defaultEdgeOptions={{
+          type: 'smoothstep',
+          animated: false
+        }}
+        connectionLineType={ConnectionLineType.SmoothStep}
       >
         <Background color="#334155" gap={20} />
         <Controls className="bg-dark-800 border-dark-700 rounded-xl overflow-hidden [&>button]:bg-dark-700 [&>button]:border-dark-600 [&>button]:text-white [&>button:hover]:bg-dark-600" />
         <MiniMap
           className="bg-dark-800 border-dark-700 rounded-xl overflow-hidden"
           nodeColor={(node) => {
-            const data = node.data as any;
+            const data = node.data as CustomNodeData;
             if (data?.isRoot) return '#0ea5e9';
             if (data?.isComposite) return '#8b5cf6';
             return '#475569';
@@ -755,37 +735,35 @@ const CanvasPage: React.FC = () => {
         {isSelectMode && <span className="ml-2 text-primary-400">• 多选模式已开启</span>}
       </div>
 
-      {/* 节点编辑器 */}
+      {/* 关系统计 */}
+      {relations.length > 0 && (
+        <div className="absolute bottom-4 right-4 text-dark-500 text-xs bg-dark-800/80 px-3 py-2 rounded-lg backdrop-blur-sm">
+          <span className="text-dark-400">节点: {nodes.length}</span>
+          <span className="mx-2">•</span>
+          <span className="text-dark-400">关系: {relations.length}</span>
+          <span className="mx-2">•</span>
+          <span className="text-dark-400">边: {edges.length}</span>
+        </div>
+      )}
+
       <NodeEditor
         nodeId={editingNodeId || selectedNodeId}
         isOpen={isNodeEditorOpen}
-        onClose={() => {
-          setIsNodeEditorOpen(false);
-          setEditingNodeId(null);
-        }}
+        onClose={closeNodeEditor}
         allNodes={storeNodes}
       />
 
-      {/* 关系编辑器 */}
       <RelationEditor
         isOpen={isRelationEditorOpen}
-        onClose={() => {
-          setIsRelationEditorOpen(false);
-          setPendingConnection(null);
-        }}
+        onClose={closeRelationEditor}
         sourceNodeId={pendingConnection?.source}
         targetNodeId={pendingConnection?.target}
         allNodes={storeNodes}
       />
 
-      {/* 复合节点创建器 */}
       <CompositeNodeCreator
         isOpen={isCompositeCreatorOpen}
-        onClose={() => {
-          setIsCompositeCreatorOpen(false);
-          setSelectedForComposite([]);
-          setIsSelectMode(false);
-        }}
+        onClose={closeCompositeCreator}
         selectedNodeIds={selectedForComposite}
         allNodes={storeNodes}
       />
