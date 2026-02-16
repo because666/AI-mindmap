@@ -4,7 +4,7 @@
   "description": "思流图 - 对话驱动的结构化思维导图系统",
   "services": [
     {
-      "name": "server",
+      "name": "ai-mindmap",
       "type": "web",
       "source": {
         "type": "docker",
@@ -12,12 +12,20 @@
       },
       "env": {
         "NODE_ENV": "production",
-        "PORT": "3001",
+        "PORT": "${PORT}",
         "MONGODB_URI": "${MONGODB_URI}",
+        "MONGODB_DATABASE": "${MONGODB_DATABASE}",
         "NEO4J_URI": "${NEO4J_URI}",
         "NEO4J_USER": "${NEO4J_USER}",
         "NEO4J_PASSWORD": "${NEO4J_PASSWORD}",
-        "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+        "NEO4J_DATABASE": "${NEO4J_DATABASE}",
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "DEFAULT_MODEL": "${DEFAULT_MODEL}",
+        "EMBEDDING_MODEL": "${EMBEDDING_MODEL}",
+        "VECTOR_PROVIDER": "${VECTOR_PROVIDER}",
+        "JWT_SECRET": "${JWT_SECRET}",
+        "RATE_LIMIT_WINDOW": "${RATE_LIMIT_WINDOW}",
+        "RATE_LIMIT_MAX": "${RATE_LIMIT_MAX}"
       },
       "healthCheck": {
         "path": "/health",
