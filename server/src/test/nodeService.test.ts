@@ -327,7 +327,7 @@ describe('NodeService', () => {
 describe('Input Validation', () => {
   it('should validate API key format', () => {
     const validateApiKey = (key: string): boolean => {
-      return key && typeof key === 'string' && key.trim().length >= 10;
+      return !!(key && typeof key === 'string' && key.trim().length >= 10);
     };
 
     expect(validateApiKey('')).toBe(false);
